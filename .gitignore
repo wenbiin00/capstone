@@ -1,1 +1,8 @@
+cat > .gitignore << 'EOF'
+node_modules/
+.env
+firebase-admin-key.json
+package-lock.json
 .DS_Store
+*.log
+EOF
