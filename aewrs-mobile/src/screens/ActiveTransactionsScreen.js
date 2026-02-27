@@ -94,6 +94,79 @@ export default function ActiveTransactionsScreen({ navigation }) {
     );
   };
 
+  const handleCancelRequest = (transaction) => {
+    Alert.alert(
+      'Cancel Borrow Request',
+      `Cancel your request for ${transaction.equipment_name}?\n\nThe equipment will be made available for others to borrow.`,
+      [
+        { text: 'Keep Request', style: 'cancel' },
+        {
+          text: 'Cancel Request',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await api.post('/transactions/cancel', {
+                transaction_id: transaction.transaction_id,
+              });
+
+              if (response.data.success) {
+                Alert.alert('Request Cancelled', 'Your borrow request has been cancelled.', [
+                  { text: 'OK', onPress: () => fetchActiveTransactions() },
+                ]);
+              }
+            } catch (error) {
+              console.error('Cancel error:', error);
+              const errorMessage = error.response?.data?.error || 'Failed to cancel request';
+              Alert.alert('Cancel Failed', errorMessage);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleChangeDuration = (transaction) => {
+    const durations = [
+      { label: '3 days', days: 3 },
+      { label: '7 days', days: 7 },
+      { label: '14 days', days: 14 },
+      { label: '30 days', days: 30 },
+    ];
+
+    Alert.alert(
+      'Change Borrow Duration',
+      'Select new duration:',
+      [
+        ...durations.map((duration) => ({
+          text: duration.label,
+          onPress: async () => {
+            try {
+              const newDueDate = new Date();
+              newDueDate.setDate(newDueDate.getDate() + duration.days);
+              const dueDateString = newDueDate.toISOString().split('T')[0];
+
+              const response = await api.post('/transactions/update-due-date', {
+                transaction_id: transaction.transaction_id,
+                due_date: dueDateString,
+              });
+
+              if (response.data.success) {
+                Alert.alert('Duration Updated', `New due date: ${newDueDate.toLocaleDateString()}`, [
+                  { text: 'OK', onPress: () => fetchActiveTransactions() },
+                ]);
+              }
+            } catch (error) {
+              console.error('Update error:', error);
+              const errorMessage = error.response?.data?.error || 'Failed to update duration';
+              Alert.alert('Update Failed', errorMessage);
+            }
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
   const isOverdue = (dueDate) => {
     if (!dueDate) return false;
     return new Date(dueDate) < new Date();
@@ -194,6 +267,21 @@ export default function ActiveTransactionsScreen({ navigation }) {
               <Text style={styles.pendingText}>
                 🔑 Tap your RFID card to unlock and collect
               </Text>
+            </View>
+
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.changeDurationButton]}
+                onPress={() => handleChangeDuration(item)}
+              >
+                <Text style={styles.actionButtonText}>Change Duration</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.cancelButton]}
+                onPress={() => handleCancelRequest(item)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel Request</Text>
+              </TouchableOpacity>
             </View>
           </View>
         ) : isPendingReturn ? (
@@ -438,6 +526,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#E65100',
     marginBottom: 4,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  actionButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  changeDurationButton: {
+    backgroundColor: '#2196F3',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  cancelButtonText: {
+    color: '#F44336',
+    fontSize: 13,
+    fontWeight: '600',
   },
   returnButton: {
     backgroundColor: '#007AFF',

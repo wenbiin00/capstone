@@ -272,4 +272,162 @@ router.post('/return', async (req, res) => {
   }
 });
 
+// POST cancel transaction (for pending_pickup only)
+router.post('/cancel', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { transaction_id } = req.body;
+
+    if (!transaction_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: transaction_id'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    // Get transaction details
+    const transactionResult = await client.query(
+      'SELECT * FROM transactions WHERE transaction_id = $1',
+      [transaction_id]
+    );
+
+    if (transactionResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        error: 'Transaction not found'
+      });
+    }
+
+    const transaction = transactionResult.rows[0];
+
+    // Only allow cancelling pending_pickup transactions
+    if (transaction.status !== 'pending_pickup') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: 'Only pending pickup transactions can be cancelled'
+      });
+    }
+
+    // Update transaction status to cancelled
+    await client.query(
+      "UPDATE transactions SET status = 'cancelled' WHERE transaction_id = $1",
+      [transaction_id]
+    );
+
+    // Restore equipment quantity
+    await client.query(
+      'UPDATE equipment SET available_quantity = available_quantity + 1 WHERE equipment_id = $1',
+      [transaction.equipment_id]
+    );
+
+    // Release locker
+    await client.query(
+      "UPDATE lockers SET status = 'available', current_equipment_id = NULL WHERE locker_id = $1",
+      [transaction.locker_id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: 'Transaction cancelled successfully'
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// POST update due date (for pending_pickup only)
+router.post('/update-due-date', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { transaction_id, due_date } = req.body;
+
+    if (!transaction_id || !due_date) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: transaction_id, due_date'
+      });
+    }
+
+    await client.query('BEGIN');
+
+    // Get transaction details
+    const transactionResult = await client.query(
+      'SELECT * FROM transactions WHERE transaction_id = $1',
+      [transaction_id]
+    );
+
+    if (transactionResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        success: false,
+        error: 'Transaction not found'
+      });
+    }
+
+    const transaction = transactionResult.rows[0];
+
+    // Only allow updating pending_pickup transactions
+    if (transaction.status !== 'pending_pickup') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: 'Only pending pickup transactions can be modified'
+      });
+    }
+
+    // Update due date
+    await client.query(
+      'UPDATE transactions SET due_date = $1 WHERE transaction_id = $2',
+      [due_date, transaction_id]
+    );
+
+    await client.query('COMMIT');
+
+    // Get updated transaction
+    const updatedTransaction = await pool.query(`
+      SELECT
+        t.*,
+        e.name as equipment_name,
+        e.description as equipment_description,
+        e.category as equipment_category,
+        l.compartment_number,
+        l.location as locker_location
+      FROM transactions t
+      JOIN equipment e ON t.equipment_id = e.equipment_id
+      LEFT JOIN lockers l ON t.locker_id = l.locker_id
+      WHERE t.transaction_id = $1
+    `, [transaction_id]);
+
+    res.json({
+      success: true,
+      message: 'Due date updated successfully',
+      data: updatedTransaction.rows[0]
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
