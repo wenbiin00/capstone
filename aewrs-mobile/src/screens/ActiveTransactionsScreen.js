@@ -201,10 +201,18 @@ export default function ActiveTransactionsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>My Active Borrows</Text>
-        <Text style={styles.subtitle}>
-          {transactions.length} {transactions.length === 1 ? 'item' : 'items'}
-        </Text>
+        <View>
+          <Text style={styles.title}>My Active Borrows</Text>
+          <Text style={styles.subtitle}>
+            {transactions.length} {transactions.length === 1 ? 'item' : 'items'}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.historyButton}
+          onPress={() => navigation.navigate('TransactionHistory')}
+        >
+          <Text style={styles.historyButtonText}>History</Text>
+        </TouchableOpacity>
       </View>
 
       {transactions.length === 0 ? (
@@ -261,6 +269,9 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   title: {
     fontSize: 24,
@@ -271,6 +282,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 4,
+  },
+  historyButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  historyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   listContent: {
     padding: 16,

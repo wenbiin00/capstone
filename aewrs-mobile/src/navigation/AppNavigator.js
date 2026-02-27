@@ -7,6 +7,7 @@ import RegisterScreen from '../screens/RegisterScreen';
 import EquipmentListScreen from '../screens/EquipmentListScreen';
 import BorrowEquipmentScreen from '../screens/BorrowEquipmentScreen';
 import ActiveTransactionsScreen from '../screens/ActiveTransactionsScreen';
+import TransactionHistoryScreen from '../screens/TransactionHistoryScreen';
 
 const Stack = createStackNavigator();
 
@@ -52,6 +53,11 @@ export default function AppNavigator() {
           name="ActiveTransactions"
           component={ActiveTransactionsScreen}
           options={{ title: 'My Borrows' }}
+        />
+        <Stack.Screen
+          name="TransactionHistory"
+          component={TransactionHistoryScreen}
+          options={{ title: 'History' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

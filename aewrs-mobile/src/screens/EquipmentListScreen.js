@@ -144,6 +144,12 @@ export default function EquipmentListScreen({ navigation }) {
             <Text style={styles.myBorrowsButtonText}>My Borrows</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={styles.historyButton}
+            onPress={() => navigation.navigate('TransactionHistory')}
+          >
+            <Text style={styles.historyButtonText}>History</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.logoutButton}
             onPress={handleLogout}
           >
@@ -225,6 +231,17 @@ const styles = StyleSheet.create({
   },
   myBorrowsButtonText: {
     color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  historyButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  historyButtonText: {
+    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
   },
