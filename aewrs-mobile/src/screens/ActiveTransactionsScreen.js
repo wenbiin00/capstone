@@ -34,9 +34,9 @@ export default function ActiveTransactionsScreen({ navigation }) {
       const response = await api.get(`/transactions/user/${sitId}`);
 
       if (response.data.success) {
-        // Filter for active and pending transactions only
+        // Filter for active, pending pickup, and pending return transactions
         const activeTransactions = response.data.data.filter(
-          (t) => t.status === 'active' || t.status === 'pending_pickup'
+          (t) => t.status === 'active' || t.status === 'pending_pickup' || t.status === 'pending_return'
         );
         setTransactions(activeTransactions);
       }
@@ -104,6 +104,7 @@ export default function ActiveTransactionsScreen({ navigation }) {
     const overdue = isOverdue(item.due_date);
     const daysUntilDue = getDaysUntilDue(item.due_date);
     const isPendingPickup = item.status === 'pending_pickup';
+    const isPendingReturn = item.status === 'pending_return';
 
     return (
       <View style={[styles.card, overdue && styles.cardOverdue]}>
@@ -114,6 +115,10 @@ export default function ActiveTransactionsScreen({ navigation }) {
           {isPendingPickup ? (
             <View style={[styles.statusBadge, { backgroundColor: '#FF9800' }]}>
               <Text style={styles.statusText}>PENDING PICKUP</Text>
+            </View>
+          ) : isPendingReturn ? (
+            <View style={[styles.statusBadge, { backgroundColor: '#2196F3' }]}>
+              <Text style={styles.statusText}>PENDING RETURN</Text>
             </View>
           ) : overdue ? (
             <View style={[styles.statusBadge, { backgroundColor: '#F44336' }]}>
@@ -156,6 +161,18 @@ export default function ActiveTransactionsScreen({ navigation }) {
             </Text>
             <Text style={styles.pendingText}>
               🔑 Tap your RFID card to collect
+            </Text>
+          </View>
+        ) : isPendingReturn ? (
+          <View style={[styles.pendingBox, { backgroundColor: '#E3F2FD' }]}>
+            <Text style={[styles.pendingText, { color: '#1565C0' }]}>
+              📍 Go to Locker {item.compartment_number}
+            </Text>
+            <Text style={[styles.pendingText, { color: '#1565C0' }]}>
+              📦 Place equipment inside the locker
+            </Text>
+            <Text style={[styles.pendingText, { color: '#1565C0' }]}>
+              🔑 Tap your RFID card to complete return
             </Text>
           </View>
         ) : (

@@ -132,11 +132,11 @@ router.post('/borrow', async (req, res) => {
     
     const locker_id = lockerResult.rows[0].locker_id;
     
-    // Create transaction
+    // Create transaction with pending_pickup status
     const transactionResult = await client.query(
-      `INSERT INTO transactions 
-       (user_id, equipment_id, locker_id, action, status, borrow_time, due_date) 
-       VALUES ($1, $2, $3, 'borrow', 'pending', NOW(), $4) 
+      `INSERT INTO transactions
+       (user_id, equipment_id, locker_id, action, status, due_date)
+       VALUES ($1, $2, $3, 'borrow', 'pending_pickup', $4)
        RETURNING *`,
       [user_id, equipment_id, locker_id, due_date || null]
     );
@@ -218,38 +218,44 @@ router.post('/return', async (req, res) => {
     }
     
     const transaction = transactionResult.rows[0];
-    
-    if (transaction.status === 'completed') {
+
+    // Validate transaction status
+    if (transaction.status !== 'active') {
       await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
-        error: 'Equipment already returned'
+        error: transaction.status === 'pending_pickup'
+          ? 'Cannot return equipment that has not been picked up yet'
+          : transaction.status === 'pending_return'
+          ? 'Return already requested. Please go to the locker to complete return.'
+          : 'This transaction cannot be returned'
       });
     }
-    
-    // Update transaction
+
+    // Mark as pending_return (user still needs to physically return to locker)
     await client.query(
-      "UPDATE transactions SET status = 'completed', return_time = NOW() WHERE transaction_id = $1",
+      "UPDATE transactions SET status = 'pending_return' WHERE transaction_id = $1",
       [transaction_id]
     );
-    
-    // Update equipment quantity
-    await client.query(
-      'UPDATE equipment SET available_quantity = available_quantity + 1 WHERE equipment_id = $1',
-      [transaction.equipment_id]
-    );
-    
-    // Update locker status
-    await client.query(
-      "UPDATE lockers SET status = 'available', current_equipment_id = NULL WHERE locker_id = $1",
-      [transaction.locker_id]
-    );
+
+    // Equipment and locker will be updated when RFID confirms physical return
     
     await client.query('COMMIT');
-    
+
+    // Get updated transaction with locker info
+    const updatedTransaction = await pool.query(`
+      SELECT
+        t.*,
+        l.compartment_number
+      FROM transactions t
+      LEFT JOIN lockers l ON t.locker_id = l.locker_id
+      WHERE t.transaction_id = $1
+    `, [transaction_id]);
+
     res.json({
       success: true,
-      message: 'Equipment returned successfully'
+      message: 'Return request submitted. Please go to the locker to complete return.',
+      data: updatedTransaction.rows[0]
     });
     
   } catch (error) {

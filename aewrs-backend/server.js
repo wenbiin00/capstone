@@ -16,6 +16,7 @@ const equipmentRoutes = require('./src/routes/equipmentRoutes');
 const userRoutes = require('./src/routes/userRoutes');
 const lockerRoutes = require('./src/routes/lockerRoutes');
 const transactionRoutes = require('./src/routes/transactionRoutes');
+const rfidRoutes = require('./src/routes/rfidRoutes');
 
 // Import middleware
 const { verifyToken, requireStaff } = require('./src/middleware/authMiddleware');
@@ -50,6 +51,10 @@ app.get('/', (req, res) => {
         getByUser: 'GET /api/transactions/user/:sitId (requires token)',
         borrow: 'POST /api/transactions/borrow (requires token)',
         return: 'POST /api/transactions/return (requires token)'
+      },
+      rfid: {
+        scan: 'POST /api/rfid/scan (Arduino hardware)',
+        check: 'GET /api/rfid/check/:rfid_uid'
       }
     }
   });
@@ -58,6 +63,7 @@ app.get('/', (req, res) => {
 // Public routes
 app.use('/api/auth', authRoutes);
 app.use('/api/equipment', equipmentRoutes); // Public - anyone can view equipment
+app.use('/api/rfid', rfidRoutes); // Public - called by Arduino hardware
 
 // Protected routes - require authentication
 app.use('/api/lockers', lockerRoutes); // Public for now, can protect later
