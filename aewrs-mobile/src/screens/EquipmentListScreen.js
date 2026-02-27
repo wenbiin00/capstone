@@ -136,12 +136,20 @@ export default function EquipmentListScreen({ navigation }) {
             {equipment.length} item{equipment.length !== 1 ? 's' : ''}
           </Text>
         </View>
-        <TouchableOpacity 
-          style={styles.logoutButton}
-          onPress={handleLogout}
-        >
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.myBorrowsButton}
+            onPress={() => navigation.navigate('ActiveTransactions')}
+          >
+            <Text style={styles.myBorrowsButtonText}>My Borrows</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+          >
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -206,12 +214,25 @@ const styles = StyleSheet.create({
     marginTop: 5,
     opacity: 0.9,
   },
+  headerButtons: {
+    gap: 8,
+  },
+  myBorrowsButton: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  myBorrowsButtonText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   logoutButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 20,
-    marginTop: 5,
   },
   logoutButtonText: {
     color: '#fff',

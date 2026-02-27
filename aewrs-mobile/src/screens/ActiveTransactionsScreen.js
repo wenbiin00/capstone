@@ -1,0 +1,376 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../../api.config';
+
+export default function ActiveTransactionsScreen({ navigation }) {
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchActiveTransactions();
+  }, []);
+
+  const fetchActiveTransactions = async () => {
+    try {
+      const sitId = await AsyncStorage.getItem('userSitId');
+
+      if (!sitId) {
+        Alert.alert('Error', 'User not logged in');
+        navigation.replace('Login');
+        return;
+      }
+
+      const response = await api.get(`/transactions/user/${sitId}`);
+
+      if (response.data.success) {
+        // Filter for active and pending transactions only
+        const activeTransactions = response.data.data.filter(
+          (t) => t.status === 'active' || t.status === 'pending_pickup'
+        );
+        setTransactions(activeTransactions);
+      }
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      Alert.alert('Error', 'Failed to load your transactions');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchActiveTransactions();
+  };
+
+  const handleReturn = (transaction) => {
+    Alert.alert(
+      'Return Equipment',
+      `Return ${transaction.equipment_name}?\n\nYou will need to:\n1. Go to Locker ${transaction.compartment_number}\n2. Place the equipment inside\n3. Tap your RFID card to lock\n\nMark as ready for return?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark for Return',
+          onPress: async () => {
+            try {
+              const response = await api.post('/transactions/return', {
+                transaction_id: transaction.transaction_id,
+              });
+
+              if (response.data.success) {
+                Alert.alert(
+                  'Success!',
+                  `Please go to Locker ${transaction.compartment_number} to return the equipment.\n\nTap your RFID card to unlock and place the equipment inside.`,
+                  [{ text: 'OK', onPress: () => fetchActiveTransactions() }]
+                );
+              }
+            } catch (error) {
+              console.error('Return error:', error);
+              const errorMessage = error.response?.data?.error || 'Failed to process return';
+              Alert.alert('Return Failed', errorMessage);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const isOverdue = (dueDate) => {
+    if (!dueDate) return false;
+    return new Date(dueDate) < new Date();
+  };
+
+  const getDaysUntilDue = (dueDate) => {
+    if (!dueDate) return null;
+    const due = new Date(dueDate);
+    const today = new Date();
+    const diffTime = due - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const renderTransactionCard = ({ item }) => {
+    const overdue = isOverdue(item.due_date);
+    const daysUntilDue = getDaysUntilDue(item.due_date);
+    const isPendingPickup = item.status === 'pending_pickup';
+
+    return (
+      <View style={[styles.card, overdue && styles.cardOverdue]}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.equipmentName} numberOfLines={1}>
+            {item.equipment_name}
+          </Text>
+          {isPendingPickup ? (
+            <View style={[styles.statusBadge, { backgroundColor: '#FF9800' }]}>
+              <Text style={styles.statusText}>PENDING PICKUP</Text>
+            </View>
+          ) : overdue ? (
+            <View style={[styles.statusBadge, { backgroundColor: '#F44336' }]}>
+              <Text style={styles.statusText}>OVERDUE</Text>
+            </View>
+          ) : (
+            <View style={[styles.statusBadge, { backgroundColor: '#4CAF50' }]}>
+              <Text style={styles.statusText}>ACTIVE</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>Locker:</Text>
+          <Text style={styles.value}>Compartment {item.compartment_number}</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.label}>Borrowed:</Text>
+          <Text style={styles.value}>
+            {item.borrow_time ? new Date(item.borrow_time).toLocaleDateString() : 'Pending'}
+          </Text>
+        </View>
+
+        {item.due_date && (
+          <View style={styles.infoRow}>
+            <Text style={styles.label}>Due:</Text>
+            <Text style={[styles.value, overdue && styles.overdueText]}>
+              {new Date(item.due_date).toLocaleDateString()}
+              {daysUntilDue !== null && !overdue && ` (${daysUntilDue} days left)`}
+              {overdue && ' (OVERDUE)'}
+            </Text>
+          </View>
+        )}
+
+        {isPendingPickup ? (
+          <View style={styles.pendingBox}>
+            <Text style={styles.pendingText}>
+              📍 Go to Locker {item.compartment_number}
+            </Text>
+            <Text style={styles.pendingText}>
+              🔑 Tap your RFID card to collect
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.returnButton, overdue && styles.returnButtonOverdue]}
+            onPress={() => handleReturn(item)}
+          >
+            <Text style={styles.returnButtonText}>
+              {overdue ? 'Return Now (Overdue!)' : 'Return Equipment'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading your transactions...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>My Active Borrows</Text>
+        <Text style={styles.subtitle}>
+          {transactions.length} {transactions.length === 1 ? 'item' : 'items'}
+        </Text>
+      </View>
+
+      {transactions.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyIcon}>📦</Text>
+          <Text style={styles.emptyTitle}>No Active Borrows</Text>
+          <Text style={styles.emptyText}>
+            You haven't borrowed any equipment yet.
+          </Text>
+          <TouchableOpacity
+            style={styles.browseButton}
+            onPress={() => navigation.navigate('EquipmentList')}
+          >
+            <Text style={styles.browseButtonText}>Browse Equipment</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={transactions}
+          renderItem={renderTransactionCard}
+          keyExtractor={(item) => item.transaction_id.toString()}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#007AFF"
+            />
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
+  },
+  header: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  listContent: {
+    padding: 16,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardOverdue: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#F44336',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  equipmentName: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginRight: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  value: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '600',
+  },
+  overdueText: {
+    color: '#F44336',
+  },
+  pendingBox: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  pendingText: {
+    fontSize: 13,
+    color: '#E65100',
+    marginBottom: 4,
+  },
+  returnButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  returnButtonOverdue: {
+    backgroundColor: '#F44336',
+  },
+  returnButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  browseButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+  },
+  browseButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
