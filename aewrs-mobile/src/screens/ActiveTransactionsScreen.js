@@ -137,9 +137,15 @@ export default function ActiveTransactionsScreen({ navigation }) {
         </View>
 
         <View style={styles.infoRow}>
-          <Text style={styles.label}>Borrowed:</Text>
+          <Text style={styles.label}>
+            {isPendingPickup ? 'Requested:' : 'Borrowed:'}
+          </Text>
           <Text style={styles.value}>
-            {item.borrow_time ? new Date(item.borrow_time).toLocaleDateString() : 'Pending'}
+            {isPendingPickup
+              ? new Date(item.created_at).toLocaleDateString()
+              : item.borrow_time
+              ? new Date(item.borrow_time).toLocaleDateString()
+              : 'Pending'}
           </Text>
         </View>
 
@@ -155,13 +161,32 @@ export default function ActiveTransactionsScreen({ navigation }) {
         )}
 
         {isPendingPickup ? (
-          <View style={styles.pendingBox}>
-            <Text style={styles.pendingText}>
-              📍 Go to Locker {item.compartment_number}
-            </Text>
-            <Text style={styles.pendingText}>
-              🔑 Tap your RFID card to collect
-            </Text>
+          <View style={styles.pendingPickupSection}>
+            <View style={styles.detailsCard}>
+              <Text style={styles.detailsTitle}>📦 Equipment Details</Text>
+              {item.equipment_description && (
+                <Text style={styles.detailsText}>{item.equipment_description}</Text>
+              )}
+              {item.equipment_category && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Category:</Text>
+                  <Text style={styles.detailValue}>{item.equipment_category}</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.pendingBox}>
+              <Text style={styles.pendingTitle}>🎯 Collection Instructions</Text>
+              <Text style={styles.pendingText}>
+                📍 Location: {item.locker_location || 'Main Lab'}
+              </Text>
+              <Text style={styles.pendingText}>
+                🗄️ Locker Compartment: {item.compartment_number}
+              </Text>
+              <Text style={styles.pendingText}>
+                🔑 Tap your RFID card to unlock and collect
+              </Text>
+            </View>
           </View>
         ) : isPendingReturn ? (
           <View style={[styles.pendingBox, { backgroundColor: '#E3F2FD' }]}>
@@ -353,11 +378,53 @@ const styles = StyleSheet.create({
   overdueText: {
     color: '#F44336',
   },
+  pendingPickupSection: {
+    marginTop: 12,
+  },
+  detailsCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  detailsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  detailsText: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  detailLabel: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '500',
+  },
+  detailValue: {
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '600',
+  },
   pendingBox: {
     backgroundColor: '#FFF3E0',
     borderRadius: 8,
     padding: 12,
-    marginTop: 8,
+    marginTop: 4,
+  },
+  pendingTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#E65100',
+    marginBottom: 8,
   },
   pendingText: {
     fontSize: 13,

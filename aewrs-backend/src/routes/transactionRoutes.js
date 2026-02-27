@@ -37,10 +37,13 @@ router.get('/user/:sitId', async (req, res) => {
   try {
     const { sitId } = req.params;
     const result = await pool.query(`
-      SELECT 
+      SELECT
         t.*,
         e.name as equipment_name,
-        l.compartment_number
+        e.description as equipment_description,
+        e.category as equipment_category,
+        l.compartment_number,
+        l.location as locker_location
       FROM transactions t
       JOIN users u ON t.user_id = u.user_id
       JOIN equipment e ON t.equipment_id = e.equipment_id
