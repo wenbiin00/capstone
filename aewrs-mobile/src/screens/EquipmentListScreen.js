@@ -83,7 +83,7 @@ export default function EquipmentListScreen({ navigation }) {
        ]}
        onPress={() => {
          if (isAvailable) {
-           Alert.alert('Equipment Selected', `You selected: ${item.name}\nAvailable: ${item.available_quantity}/${item.total_quantity}`);
+           navigation.navigate('BorrowEquipment', { equipment: item });
          }
        }}
        disabled={!isAvailable}

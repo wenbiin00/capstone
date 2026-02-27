@@ -5,6 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import EquipmentListScreen from '../screens/EquipmentListScreen';
+import BorrowEquipmentScreen from '../screens/BorrowEquipmentScreen';
 
 const Stack = createStackNavigator();
 
@@ -36,10 +37,15 @@ export default function AppNavigator() {
         <Stack.Screen
           name="EquipmentList"
           component={EquipmentListScreen}
-          options={{ 
+          options={{
             headerShown: false,
             headerLeft: () => null, // Prevent back button
           }}
+        />
+        <Stack.Screen
+          name="BorrowEquipment"
+          component={BorrowEquipmentScreen}
+          options={{ title: 'Borrow Equipment' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
