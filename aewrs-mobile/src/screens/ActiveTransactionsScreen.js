@@ -24,6 +24,10 @@ export default function ActiveTransactionsScreen({ navigation }) {
   const fetchActiveTransactions = async () => {
     try {
       const sitId = await AsyncStorage.getItem('userSitId');
+      const token = await AsyncStorage.getItem('userToken');
+
+      console.log('Fetching transactions for SIT ID:', sitId);
+      console.log('Token exists:', !!token);
 
       if (!sitId) {
         Alert.alert('Error', 'User not logged in');
@@ -42,7 +46,11 @@ export default function ActiveTransactionsScreen({ navigation }) {
       }
     } catch (error) {
       console.error('Error fetching transactions:', error);
-      Alert.alert('Error', 'Failed to load your transactions');
+      console.error('Error details:', error.response?.data || error.message);
+      Alert.alert(
+        'Error Loading Transactions',
+        error.response?.data?.error || error.message || 'Failed to load your transactions'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
