@@ -85,3 +85,12 @@ app.listen(PORT, () => {
   console.log(`API Documentation: http://localhost:${PORT}/`);
   console.log(`JWT Authentication enabled`);
 });
+
+// Prevent server from crashing on unhandled errors
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception (server kept running):', err.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection (server kept running):', reason);
+});
