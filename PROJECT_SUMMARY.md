@@ -1,8 +1,8 @@
 # AEWRS Project Development Summary
 
 **Project Name:** Advanced Equipment and Warehouse Resource System (AEWRS)
-**Development Period:** November 2024 - February 2025
-**Status:** Week 2 Complete (95%) - Full Student Workflow Implemented
+**Development Period:** November 2024 - March 2026
+**Status:** Week 3 In Progress - Fixed Locker Assignment Implemented
 **Timeline:** 1-month sprint to completion
 
 ---
@@ -41,13 +41,18 @@ AEWRS is a smart equipment management system that enables students to borrow and
 Tables:
 - users (user_id, sit_id, name, email, password_hash, role, rfid_uid)
 - equipment (equipment_id, name, description, category, total_quantity, available_quantity, low_stock_threshold)
-- lockers (locker_id, compartment_number, location, status, current_equipment_id, current_transaction_id)
+- lockers (locker_id, compartment_number, status, assigned_equipment_id, current_transaction_id)
 - transactions (transaction_id, user_id, equipment_id, locker_id, action, status, borrow_time, return_time, due_date)
 - access_logs (log_id, user_id, rfid_uid, locker_id, action, access_granted, reason, timestamp)
 
 Views:
 - low_stock_equipment (for lab tech dashboard)
 - active_transactions_view (for user transaction history)
+
+Key Schema Change (v3):
+- lockers.current_equipment_id renamed to assigned_equipment_id
+- Column now represents permanent equipment assignment, not current occupancy
+- Each equipment type has exactly one fixed locker compartment
 ```
 
 ---
@@ -74,6 +79,20 @@ Views:
    - **Problem:** Transaction states didn't match new workflow requirements
    - **Solution:** Created database upgrade script (upgrade-v2.sql)
    - **Additions:** New transaction states, views for low-stock and active transactions
+
+### Week 3 Challenges Encountered
+
+1. **Dynamic Locker Assignment Causing Incrementing Compartment Numbers**
+   - **Problem:** Each new borrow grabbed the next available locker, so students always got a different (incrementing) compartment for the same equipment
+   - **Root Cause:** Borrow query used `WHERE status = 'available' LIMIT 1` — no equipment-to-locker binding existed
+   - **Solution:** Added `assigned_equipment_id` column to `lockers` table; borrow query now finds locker by `WHERE assigned_equipment_id = equipment_id`
+   - **Side Effect Fix:** Removed locker status updates on borrow/cancel/return — equipment `available_quantity` is now the sole availability gate
+
+2. **Migration Name Mismatch**
+   - **Problem:** `upgrade-v3.sql` used hardcoded equipment names (e.g. `'Raspberry Pi 4'`) matching sample data, but real DB had different equipment (`'Arduino Uno'`, `'ESP32'`, etc.)
+   - **Impact:** All but one locker ended up with `assigned_equipment_id = NULL` → borrow returned 400 "No locker assigned"
+   - **Solution:** Replaced name-based UPDATE with a dynamic row-number assignment query — assigns nth equipment (by equipment_id) to nth locker (by compartment_number), regardless of names
+   - **Applied Directly:** Fix applied via psql on live DB to restore functionality immediately
 
 ### Week 2 Challenges Encountered
 
@@ -150,6 +169,46 @@ const token = jwt.sign({
 4. If lab tech: check if low-stock replenishment authorized
 5. Grant/deny access, log attempt, update transaction status
 ```
+
+### 5. Fixed Locker Assignment (NEW - Week 3)
+**Decision:** Each equipment type has a permanently assigned locker compartment
+**Reasoning:**
+- Students should always know which compartment to go to for a given item
+- Prevents confusion when multiple borrows of the same equipment happen simultaneously
+- Simplifies physical locker labeling (each compartment can be labeled with equipment name)
+- Equipment quantity already gates borrow availability — locker status is redundant as a gate
+
+**Implementation:**
+```sql
+-- lockers.assigned_equipment_id = permanent link to equipment type
+SELECT locker_id FROM lockers WHERE assigned_equipment_id = $1 LIMIT 1
+-- replaces: SELECT locker_id FROM lockers WHERE status = 'available' LIMIT 1
+```
+
+**Current Assignments (live DB):**
+
+| Compartment | Equipment |
+|---|---|
+| 1 | Arduino Uno |
+| 2 | ESP32 |
+| 3 | Ultrasonic Sensor |
+| 101 | Arduino Uno R3 |
+| 102 | RC522 RFID Reader |
+| 103 | HX711 Load Cell Amplifier |
+| 104 | ESP32 DevKit V1 |
+| 105 | Solenoid Lock 12V |
+| 106 | Breadboard 830 Points |
+| 107 | IR Obstacle Sensor |
+| 108 | Jumper Wire Set |
+| 109 | DHT22 Temperature Sensor |
+| 110 | Ultrasonic Sensor HC-SR04 |
+| 111–115 | Unassigned (reserved for future equipment) |
+
+**Files Changed:**
+- `src/database/init.sql` - `current_equipment_id` → `assigned_equipment_id`; locker inserts use equipment subqueries
+- `src/database/upgrade-v3.sql` - New migration; dynamic row-number assignment
+- `src/routes/transactionRoutes.js` - Borrow uses fixed locker lookup; removed locker status updates
+- `src/routes/rfidRoutes.js` - Removed locker status reset on return
 
 ### 4. Transaction Flexibility Features
 **Decision:** Allow users to cancel or modify pending pickup requests
@@ -260,6 +319,29 @@ POST /api/transactions/update-due-date
   - `ALTER TABLE lockers ADD COLUMN IF NOT EXISTS location VARCHAR(100) DEFAULT 'Main Lab';`
   - Enables display of physical locker location in mobile app
 
+### Week 3: Backend Files Modified
+- `src/routes/transactionRoutes.js`
+  - Changed borrow locker lookup from `WHERE status = 'available'` to `WHERE assigned_equipment_id = equipment_id`
+  - Removed `UPDATE lockers SET status = 'occupied'` on borrow
+  - Removed `UPDATE lockers SET status = 'available'` on cancel
+  - Updated error message: "No locker assigned to this equipment. Please contact a lab technician."
+
+- `src/routes/rfidRoutes.js`
+  - Removed `UPDATE lockers SET status = 'available', current_equipment_id = NULL` on RFID return confirmation
+  - Equipment quantity restore remains unchanged
+
+### Week 3: Database Files Modified
+- `src/database/init.sql`
+  - Renamed column `current_equipment_id` → `assigned_equipment_id` in lockers table
+  - Updated locker INSERT statements to pre-assign equipment by name subquery
+
+### Week 3: Database Files Created
+- `src/database/upgrade-v3.sql` - Migration for existing databases
+  - Renames `current_equipment_id` → `assigned_equipment_id`
+  - Resets all locker statuses to `available`
+  - Dynamically assigns equipment to lockers by row-number ordering (nth equipment → nth locker)
+  - Works on any database regardless of equipment names
+
 ---
 
 ## Current System Capabilities
@@ -292,10 +374,9 @@ POST /api/transactions/update-due-date
    - View equipment details (name, description, category)
    - Check availability before borrowing
    - Select borrow duration (3, 7, 14, 30 days)
-   - Automatic locker assignment
+   - Fixed locker assigned based on equipment type (always same compartment)
    - Transaction created with 'pending_pickup' status
    - Equipment quantity decremented
-   - Locker marked as occupied
 
 5. **Active Transactions - My Borrows**
    - **Pending Pickups:** View items waiting to be collected
@@ -315,8 +396,8 @@ POST /api/transactions/update-due-date
 6. **Transaction Management**
    - Cancel pending pickup requests
      - Restores equipment quantity
-     - Releases assigned locker
      - Updates transaction status to 'cancelled'
+     - Locker remains permanently assigned (not released)
    - Change borrow duration
      - Update due date for pending pickups
      - Preset duration options (3, 7, 14, 30 days)
@@ -414,7 +495,10 @@ POST /api/transactions/update-due-date
 - [x] Enhanced transaction state machine
 - [x] Test borrow workflow (tested successfully)
 
-### Week 3 - Lab Tech Features
+### Week 3 - Lab Tech Features + Locker System (IN PROGRESS)
+- [x] Fixed locker assignment per equipment type
+- [x] Database migration (upgrade-v3.sql)
+- [x] Locker-equipment binding in DB (13 equipment → 13 lockers assigned)
 - [ ] Lab tech dashboard
 - [ ] Low-stock alerts
 - [ ] Replenishment unlock feature
@@ -545,11 +629,18 @@ The AEWRS project has successfully completed Week 2 with a fully functional stud
 - RFID integration endpoints prepared
 - Database schema enhancements (location column)
 
+### Week 3 Achievements (In Progress) 🔄
+- Fixed locker assignment: each equipment type permanently bound to a locker compartment
+- Database migration `upgrade-v3.sql` for existing databases
+- Borrow logic refactored: no longer relies on locker `status` as availability gate
+- Locker status updates removed from borrow/cancel/return flows (cleaner separation of concerns)
+- Debugged and applied live DB fix for equipment-locker assignments
+
 ### Current Status
-The project is **95% complete** and on track to meet the 1-month deadline:
+The project is **on track** for the 1-month deadline:
 - **Week 1:** ✅ Foundation complete
 - **Week 2:** ✅ Student workflow complete
-- **Week 3:** Lab tech features + RFID hardware integration
+- **Week 3:** 🔄 Fixed locker system done; lab tech features remaining
 - **Week 4:** Testing, polish, and demo preparation
 
 ### Key Success Factors
@@ -564,6 +655,7 @@ The project is **95% complete** and on track to meet the 1-month deadline:
 - **Flexible Borrowing:** Users can cancel or change duration before pickup
 - **Detailed UI:** Equipment details, locker location, collection instructions
 - **RFID Ready:** Endpoints created for Arduino hardware integration
+- **Fixed Locker Mapping:** Each equipment type has a dedicated, permanent compartment
 - **Secure by Design:** JWT tokens, role-based access, parameterized queries
 
 ### Next Phase Preview
@@ -579,4 +671,5 @@ The system architecture is production-ready, secure, and scalable. The student-f
 ---
 
 **Generated:** February 27, 2026
-**Next Update:** After Week 3 completion (Lab Tech Dashboard)
+**Last Updated:** March 1, 2026 — Week 3 session: Fixed locker assignment system
+**Next Update:** After Week 3 completion (Lab Tech Dashboard + Arduino RFID integration)

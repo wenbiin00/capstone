@@ -11,7 +11,7 @@ const JWT_EXPIRES_IN = '7d'; // Token valid for 7 days
 // Register new user
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, sit_id, name, role } = req.body;
+    const { email, password, sit_id, name } = req.body;
 
     // Validate required fields
     if (!email || !password || !sit_id || !name) {
@@ -28,6 +28,16 @@ router.post('/register', async (req, res) => {
         error: 'Password must be at least 6 characters'
       });
     }
+
+    // Determine role from SIT ID range (server-side, clients cannot self-assign)
+    const sitIdNum = parseInt(sit_id, 10);
+    if (isNaN(sitIdNum) || sitIdNum < 1000000 || sitIdNum > 3000000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid SIT ID. Staff IDs: 1000000–1999999. Student IDs: 2000000–3000000.'
+      });
+    }
+    const assignedRole = sitIdNum >= 2000000 ? 'student' : 'staff';
 
     // Check if email already exists
     const existingUser = await pool.query(
@@ -62,7 +72,7 @@ router.post('/register', async (req, res) => {
     // Store user in database with hashed password
     const result = await pool.query(
       'INSERT INTO users (sit_id, name, email, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING user_id, sit_id, name, email, role, created_at',
-      [sit_id, name, email, password_hash, role || 'student']
+      [sit_id, name, email, password_hash, assignedRole]
     );
 
     const user = result.rows[0];
