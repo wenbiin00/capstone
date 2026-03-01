@@ -120,21 +120,22 @@ router.post('/borrow', async (req, res) => {
       });
     }
     
-    // Find available locker
+    // Find the fixed locker assigned to this equipment
     const lockerResult = await client.query(
-      "SELECT locker_id FROM lockers WHERE status = 'available' LIMIT 1"
+      'SELECT locker_id FROM lockers WHERE assigned_equipment_id = $1 LIMIT 1',
+      [equipment_id]
     );
-    
+
     if (lockerResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(400).json({
         success: false,
-        error: 'No available lockers'
+        error: 'No locker assigned to this equipment. Please contact a lab technician.'
       });
     }
-    
+
     const locker_id = lockerResult.rows[0].locker_id;
-    
+
     // Create transaction with pending_pickup status
     const transactionResult = await client.query(
       `INSERT INTO transactions
@@ -143,17 +144,11 @@ router.post('/borrow', async (req, res) => {
        RETURNING *`,
       [user_id, equipment_id, locker_id, due_date || null]
     );
-    
+
     // Update equipment quantity
     await client.query(
       'UPDATE equipment SET available_quantity = available_quantity - 1 WHERE equipment_id = $1',
       [equipment_id]
-    );
-    
-    // Update locker status
-    await client.query(
-      "UPDATE lockers SET status = 'occupied', current_equipment_id = $1 WHERE locker_id = $2",
-      [equipment_id, locker_id]
     );
     
     await client.query('COMMIT');
@@ -323,12 +318,6 @@ router.post('/cancel', async (req, res) => {
     await client.query(
       'UPDATE equipment SET available_quantity = available_quantity + 1 WHERE equipment_id = $1',
       [transaction.equipment_id]
-    );
-
-    // Release locker
-    await client.query(
-      "UPDATE lockers SET status = 'available', current_equipment_id = NULL WHERE locker_id = $1",
-      [transaction.locker_id]
     );
 
     await client.query('COMMIT');

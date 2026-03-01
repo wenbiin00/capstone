@@ -97,12 +97,6 @@ router.post('/scan', async (req, res) => {
         [transaction.equipment_id]
       );
 
-      // Update locker status
-      await client.query(
-        "UPDATE lockers SET status = 'available', current_equipment_id = NULL WHERE locker_id = $1",
-        [transaction.locker_id]
-      );
-
       await client.query('COMMIT');
 
       return res.json({

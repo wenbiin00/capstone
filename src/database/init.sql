@@ -38,7 +38,7 @@ CREATE TABLE lockers (
     locker_id SERIAL PRIMARY KEY,
     compartment_number INTEGER UNIQUE NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'occupied', 'maintenance')),
-    current_equipment_id INTEGER REFERENCES equipment(equipment_id) ON DELETE SET NULL,
+    assigned_equipment_id INTEGER REFERENCES equipment(equipment_id) ON DELETE SET NULL,
     current_transaction_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -106,23 +106,23 @@ INSERT INTO equipment (name, description, category, total_quantity, available_qu
 ('Soldering Iron', 'Temperature-controlled soldering station', 'Tools', 10, 7, 3),
 ('3D Printer Filament', 'PLA filament 1kg spool', 'Materials', 12, 2, 5);
 
--- Insert sample lockers
-INSERT INTO lockers (compartment_number, status) VALUES
-(101, 'available'),
-(102, 'available'),
-(103, 'available'),
-(104, 'available'),
-(105, 'available'),
-(106, 'available'),
-(107, 'available'),
-(108, 'available'),
-(109, 'available'),
-(110, 'available'),
-(201, 'available'),
-(202, 'available'),
-(203, 'available'),
-(204, 'available'),
-(205, 'available');
+-- Insert sample lockers (each equipment type has a fixed, dedicated locker)
+INSERT INTO lockers (compartment_number, status, assigned_equipment_id) VALUES
+(101, 'available', (SELECT equipment_id FROM equipment WHERE name = 'Arduino Uno R3')),
+(102, 'available', (SELECT equipment_id FROM equipment WHERE name = 'Raspberry Pi 4')),
+(103, 'available', (SELECT equipment_id FROM equipment WHERE name = 'Digital Multimeter')),
+(104, 'available', (SELECT equipment_id FROM equipment WHERE name = 'Breadboard Kit')),
+(105, 'available', (SELECT equipment_id FROM equipment WHERE name = 'Oscilloscope Probe')),
+(106, 'available', (SELECT equipment_id FROM equipment WHERE name = 'Logic Analyzer')),
+(107, 'available', (SELECT equipment_id FROM equipment WHERE name = 'Soldering Iron')),
+(108, 'available', (SELECT equipment_id FROM equipment WHERE name = '3D Printer Filament')),
+(109, 'available', NULL),
+(110, 'available', NULL),
+(201, 'available', NULL),
+(202, 'available', NULL),
+(203, 'available', NULL),
+(204, 'available', NULL),
+(205, 'available', NULL);
 
 -- Create view for low-stock equipment (for lab tech dashboard)
 CREATE OR REPLACE VIEW low_stock_equipment AS
