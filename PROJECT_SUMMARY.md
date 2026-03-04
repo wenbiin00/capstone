@@ -2,7 +2,7 @@
 
 **Project Name:** Advanced Equipment and Warehouse Resource System (AEWRS)
 **Development Period:** November 2024 - March 2026
-**Status:** Week 3 In Progress - Staff Portal & Inventory Management Implemented
+**Status:** Week 3 In Progress - Staff Portal, Low-Stock Alerts & Active Borrows View Implemented
 **Timeline:** 1-month sprint to completion
 
 ---
@@ -79,6 +79,21 @@ Key Schema Change (v3):
    - **Problem:** Transaction states didn't match new workflow requirements
    - **Solution:** Created database upgrade script (upgrade-v2.sql)
    - **Additions:** New transaction states, views for low-stock and active transactions
+
+### Week 3 Challenges Encountered (Session 3 — Low-Stock Alerts & Active Borrows)
+
+1. **api.config.js `baseURL` Bug**
+   - **Problem:** `axios.create({ baseURL: process.env.EXPO_PUBLIC_API_URL })` — the fallback constant `API_BASE_URL` was computed but never used in the axios instance
+   - **Impact:** If `EXPO_PUBLIC_API_URL` wasn't set, `baseURL` was `undefined` → every request failed with "Network Error"
+   - **Solution:** Changed `baseURL` to use `API_BASE_URL` (the constant that includes the `||` fallback)
+
+2. **IP Address Changed Between Sessions**
+   - **Problem:** `aewrs-mobile/.env` still had `192.168.68.65` but machine moved to `192.168.68.51`
+   - **Solution:** Updated `.env` EXPO_PUBLIC_API_URL; restart Expo with `--clear` to pick up env change
+
+3. **404 on New `/transactions/active` Endpoint**
+   - **Problem:** Backend server was running old in-memory code without the new route
+   - **Solution:** Killed old process and restarted backend; route immediately available
 
 ### Week 3 Challenges Encountered (Session 2 — Staff Portal)
 
@@ -431,6 +446,37 @@ POST /api/transactions/update-due-date
   - Detects changes before making API calls (no-op if nothing changed)
   - Calls PUT /equipment/:id and/or PATCH /lockers/:id/assign as needed
 
+### Week 3: Low-Stock Alerts & Active Borrows (Session 3)
+- `src/routes/equipmentRoutes.js`
+  - Added `GET /low-stock` (staff-only) — queries `low_stock_equipment` DB view
+  - Placed before `GET /:id` to prevent "low-stock" being matched as an ID param
+
+- `src/routes/transactionRoutes.js`
+  - Added `verifyToken`, `requireStaff` import
+  - Added `GET /active` (staff-only) — returns pending_pickup/active/pending_return transactions
+  - Includes computed `is_overdue` boolean; sorted overdue-first, then earliest due date
+
+- `src/screens/StaffDashboardScreen.js` (modified)
+  - Added collapsible low-stock alert banner above equipment list
+  - Shows item count, per-item qty, and direct "Restock" button per low-stock item
+  - Added "Borrows" button in header → navigates to StaffActiveBorrowsScreen
+
+- `src/screens/StaffActiveBorrowsScreen.js` (NEW)
+  - Stats bar: Total / Pending / Active / Overdue counts
+  - Filter tabs: All | Pending Pickup | Active | Overdue
+  - Cards with student name/SIT ID, equipment, compartment, status badge, due date
+  - Overdue: red left border, tinted background, "⚠ OVERDUE" in due date field
+  - Pull-to-refresh; reloads on screen focus
+
+- `src/navigation/AppNavigator.js`
+  - Added StaffActiveBorrowsScreen import and Stack.Screen registration (green header)
+
+- `api.config.js` (bug fix)
+  - Fixed `baseURL` to use `API_BASE_URL` constant (with fallback) instead of raw `process.env.EXPO_PUBLIC_API_URL`
+
+- `aewrs-mobile/.env`
+  - Updated IP from 192.168.68.65 → 192.168.68.51 (machine IP changed)
+
 ---
 
 ## Current System Capabilities
@@ -521,34 +567,57 @@ POST /api/transactions/update-due-date
     - `PATCH /api/equipment/:id/stock` — add stock units (requires staff role)
     - `PUT /api/equipment/:id` — edit equipment details (requires staff role)
     - `PATCH /api/lockers/:locker_id/assign` — reassign locker to equipment (requires staff role)
+    - `GET /api/equipment/low-stock` — items below low_stock_threshold (requires staff role)
+    - `GET /api/transactions/active` — all active borrows with overdue flag (requires staff role)
+
+11. **Low-Stock Alert Banner (NEW - Week 3 Session 3)**
+    - Displayed above equipment list on Staff Dashboard whenever any item is below `low_stock_threshold`
+    - Shows count of affected items; tap to collapse/expand
+    - Each low-stock row shows name, remaining qty, and a direct "Restock" button that opens Stock Up modal
+    - Computed client-side from already-fetched equipment data — no extra API call
+    - Items at zero stock labelled "OUT OF STOCK"
+
+12. **Active Borrows View — StaffActiveBorrowsScreen (NEW - Week 3 Session 3)**
+    - Accessible from "Borrows" button in Staff Dashboard header
+    - **Stats bar:** Total / Pending / Active / Overdue counts at a glance
+    - **Filter tabs:** All | Pending Pickup | Active | Overdue
+    - Each card shows: student name + SIT ID, equipment, compartment, status badge, due date
+    - Overdue cards: red left border, tinted background, "⚠ OVERDUE" label in due date row
+    - Sorted by: overdue first, then earliest due date, then newest
+    - Pull-to-refresh; reloads on screen focus
 
 #### Backend API Endpoints
-8. **Authentication Endpoints**
+13. **Authentication Endpoints**
    - POST /api/auth/register - User registration
    - POST /api/auth/login - User authentication
    - GET /api/auth/profile - Get user profile
 
-9. **Equipment Endpoints**
-   - GET /api/equipment - List all equipment
-   - GET /api/equipment/:id - Get equipment details
+14. **Equipment Endpoints**
+    - GET /api/equipment - List all equipment
+    - GET /api/equipment/:id - Get equipment details
+    - GET /api/equipment/low-stock - Items below threshold (staff only) **NEW**
+    - PATCH /api/equipment/:id/stock - Add stock units (staff only)
+    - PUT /api/equipment/:id - Edit equipment details (staff only)
 
-10. **Transaction Endpoints**
+15. **Transaction Endpoints**
     - POST /api/transactions/borrow - Create borrow request (protected)
     - POST /api/transactions/return - Initiate return process (protected)
-    - POST /api/transactions/cancel - Cancel pending pickup (protected) **NEW**
-    - POST /api/transactions/update-due-date - Change due date (protected) **NEW**
+    - POST /api/transactions/cancel - Cancel pending pickup (protected)
+    - POST /api/transactions/update-due-date - Change due date (protected)
     - GET /api/transactions - List all transactions
+    - GET /api/transactions/active - All active borrows with overdue flag (staff only) **NEW**
     - GET /api/transactions/user/:sitId - User transaction history with full details
 
-11. **RFID Endpoints** (NEW - Week 2)
+16. **RFID Endpoints**
     - POST /api/rfid/scan - Handle RFID scan for pickup/return
     - GET /api/rfid/check/:rfid_uid - Check active transactions for RFID
 
-12. **Locker Endpoints**
+17. **Locker Endpoints**
     - GET /api/lockers - List all lockers
     - GET /api/lockers/available - Get available lockers
+    - PATCH /api/lockers/:locker_id/assign - Reassign locker to equipment (staff only)
 
-13. **User Management Endpoints**
+18. **User Management Endpoints**
     - GET /api/users - List users (staff only)
 
 ### ⚠️ Ready for Testing
@@ -556,9 +625,9 @@ POST /api/transactions/update-due-date
 - Transaction state machine fully implemented, needs end-to-end testing with physical lockers
 
 ### ❌ Not Yet Implemented
-- Lab tech dashboard
-- Low-stock alerts and notifications
-- Equipment replenishment workflow
+- Add new equipment (staff can edit/stock existing items only)
+- Overdue auto-expiry (scheduled job to mark transactions as expired)
+- Equipment replenishment workflow (RFID unlock for lab tech restocking)
 - Admin panel for user and equipment management
 - Arduino firmware integration and testing
 
@@ -615,7 +684,11 @@ POST /api/transactions/update-due-date
 - [x] Staff Dashboard (inventory overview, stock up, edit)
 - [x] Edit Equipment screen (details + locker reassignment)
 - [x] Staff-only API endpoints (stock, edit equipment, reassign locker)
-- [ ] Low-stock alerts / notifications
+- [x] Low-stock alert banner on Staff Dashboard
+- [x] Active Borrows screen (all active borrows, overdue detection, filter tabs)
+- [x] GET /equipment/low-stock and GET /transactions/active endpoints
+- [ ] Add new equipment (staff can only edit existing)
+- [ ] Overdue auto-expiry (scheduled job)
 - [ ] Replenishment unlock feature (RFID for lab tech restocking)
 - [ ] Arduino RFID integration testing
 
@@ -698,9 +771,9 @@ NODE_ENV=production
 
 ### Code Metrics
 - **Backend Files:** 20+ route/middleware files
-- **Frontend Screens:** 6 screens (Login, Register, EquipmentList, BorrowEquipment, ActiveTransactions, TransactionHistory)
+- **Frontend Screens:** 9 screens (Login, Register, EquipmentList, BorrowEquipment, ActiveTransactions, TransactionHistory, StaffDashboard, StaffEditEquipment, StaffActiveBorrows)
 - **Database Tables:** 5 core tables + 2 views
-- **API Endpoints:** 20+ endpoints (13+ protected routes)
+- **API Endpoints:** 25+ endpoints (15+ protected routes)
 - **Lines of Code:** ~5000+ lines (estimated)
 
 ### Dependencies
@@ -754,6 +827,10 @@ The AEWRS project has successfully completed Week 2 with a fully functional stud
 - Edit Equipment screen: partial field updates + locker reassignment with automatic conflict resolution
 - 3 new staff-only API endpoints with verifyToken + requireStaff middleware
 - Fixed stale `current_equipment_id` column reference in lockerRoutes GET /
+- **Session 3:** Low-stock alert banner (collapsible, with quick Restock button per item)
+- **Session 3:** Active Borrows screen with stats bar, filter tabs (All/Pending/Active/Overdue), red overdue highlighting
+- **Session 3:** `GET /equipment/low-stock` and `GET /transactions/active` staff-protected endpoints
+- **Session 3:** Fixed `api.config.js` baseURL bug (was using raw env var, ignoring fallback); updated machine IP
 
 ### Current Status
 The project is **on track** for the 1-month deadline:
@@ -792,5 +869,5 @@ The system architecture is production-ready, secure, and scalable. The student-f
 ---
 
 **Generated:** February 27, 2026
-**Last Updated:** March 1, 2026 — Week 3 session 2: Staff portal & inventory management
-**Next Update:** After Week 3 completion (Low-stock alerts + Arduino RFID integration)
+**Last Updated:** March 4, 2026 — Week 3 session 3: Low-stock alerts, Active Borrows view, api.config.js bug fix
+**Next Update:** After Week 3 completion (Add equipment, overdue expiry, Arduino RFID integration)
