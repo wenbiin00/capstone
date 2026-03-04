@@ -22,6 +22,16 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /low-stock — staff: all equipment below low_stock_threshold
+router.get('/low-stock', verifyToken, requireStaff, async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM low_stock_equipment');
+    res.json({ success: true, count: result.rows.length, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET single equipment by ID
 router.get('/:id', async (req, res) => {
   try {

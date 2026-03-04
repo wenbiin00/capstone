@@ -2,7 +2,7 @@
 
 **Project Name:** Advanced Equipment and Warehouse Resource System (AEWRS)
 **Development Period:** November 2024 - March 2026
-**Status:** Week 3 In Progress - Fixed Locker Assignment Implemented
+**Status:** Week 3 In Progress - Staff Portal & Inventory Management Implemented
 **Timeline:** 1-month sprint to completion
 
 ---
@@ -80,7 +80,13 @@ Key Schema Change (v3):
    - **Solution:** Created database upgrade script (upgrade-v2.sql)
    - **Additions:** New transaction states, views for low-stock and active transactions
 
-### Week 3 Challenges Encountered
+### Week 3 Challenges Encountered (Session 2 — Staff Portal)
+
+1. **Locker Route Using Stale Column Name**
+   - **Problem:** `lockerRoutes.js` GET / query still referenced `current_equipment_id` after the v3 schema rename
+   - **Solution:** Updated JOIN to use `assigned_equipment_id` while adding the new assign endpoint
+
+### Week 3 Challenges Encountered (Session 1 — Fixed Locker Assignment)
 
 1. **Dynamic Locker Assignment Causing Incrementing Compartment Numbers**
    - **Problem:** Each new borrow grabbed the next available locker, so students always got a different (incrementing) compartment for the same equipment
@@ -169,6 +175,45 @@ const token = jwt.sign({
 4. If lab tech: check if low-stock replenishment authorized
 5. Grant/deny access, log attempt, update transaction status
 ```
+
+### 6. Staff Portal & Role-Based Registration (NEW - Week 3)
+**Decision:** Role is determined server-side from SIT ID range — clients cannot self-assign a role
+**SIT ID Ranges:**
+- `1,000,000–1,999,999` → `staff`
+- `2,000,000–3,000,000` → `student`
+- Anything else → rejected with 400 error
+
+**Post-Login Routing:**
+```javascript
+if (user.role === 'staff' || user.role === 'admin') {
+  navigation.replace('StaffDashboard');
+} else {
+  navigation.replace('EquipmentList');
+}
+```
+
+**Staff Dashboard Features:**
+- Green-themed header to visually distinguish from student view
+- Equipment list with colour-coded stock badges (green/orange/red based on quantity vs. threshold)
+- Per-item locker compartment display
+- **Stock Up** modal: enter units to add → increments both `total_quantity` and `available_quantity`
+- **Edit** button → navigates to edit screen
+
+**Edit Equipment Screen Features:**
+- Edit name, description, category (partial updates — only sends changed fields)
+- Locker picker showing only unassigned lockers or the item's current locker
+- Saving locker change auto-clears previous assignment (one locker per equipment enforced)
+- Skips API call if nothing was changed
+
+**Files Added/Changed:**
+- `src/routes/authRoutes.js` - Auto-role from SIT ID; removed client-supplied `role` from body
+- `src/routes/equipmentRoutes.js` - `PATCH /:id/stock` and `PUT /:id` (both staff-only)
+- `src/routes/lockerRoutes.js` - `PATCH /:locker_id/assign` (staff-only); fixed stale column reference
+- `src/screens/LoginScreen.js` - Post-login route by role
+- `src/screens/RegisterScreen.js` - Removed hardcoded `role: 'student'`; staff navigate directly to dashboard
+- `src/screens/StaffDashboardScreen.js` - **NEW**
+- `src/screens/StaffEditEquipmentScreen.js` - **NEW**
+- `src/navigation/AppNavigator.js` - Added StaffDashboard + StaffEditEquipment screens
 
 ### 5. Fixed Locker Assignment (NEW - Week 3)
 **Decision:** Each equipment type has a permanently assigned locker compartment
@@ -342,18 +387,65 @@ POST /api/transactions/update-due-date
   - Dynamically assigns equipment to lockers by row-number ordering (nth equipment → nth locker)
   - Works on any database regardless of equipment names
 
+### Week 3: Staff Portal Files Modified (Session 2)
+- `src/routes/authRoutes.js`
+  - Removed `role` from destructured request body
+  - Added SIT ID range validation and auto-role assignment
+  - Rejects SIT IDs outside 1,000,000–3,000,000 range
+
+- `src/routes/equipmentRoutes.js`
+  - Added import: `verifyToken`, `requireStaff` from authMiddleware
+  - Added `PATCH /:id/stock` — staff: stock up (add_quantity > 0 integer)
+  - Added `PUT /:id` — staff: partial update of name/description/category
+
+- `src/routes/lockerRoutes.js`
+  - Added import: `verifyToken`, `requireStaff` from authMiddleware
+  - Fixed GET / query: `current_equipment_id` → `assigned_equipment_id`
+  - Added `PATCH /:locker_id/assign` — staff: reassign locker, clears old assignment atomically
+
+- `src/screens/LoginScreen.js`
+  - Post-login navigation: staff/admin → StaffDashboard, student → EquipmentList
+
+- `src/screens/RegisterScreen.js`
+  - Removed hardcoded `role: 'student'` from POST body
+  - Added AsyncStorage credential storage after registration
+  - Staff registrants navigate directly to StaffDashboard (no re-login required)
+
+- `src/navigation/AppNavigator.js`
+  - Added imports for StaffDashboardScreen and StaffEditEquipmentScreen
+  - Registered StaffDashboard screen (headerShown: false, green theme)
+  - Registered StaffEditEquipment screen (green header)
+
+### Week 3: Staff Portal Files Created (Session 2)
+- `src/screens/StaffDashboardScreen.js`
+  - Green-themed header with logout
+  - Parallel fetch of equipment + lockers, merged on assigned_equipment_id
+  - Colour-coded stock badges per item
+  - Stock Up modal with quantity TextInput
+  - Edit button navigates to StaffEditEquipmentScreen with equipment + lockers as params
+  - Pull-to-refresh; reloads on screen focus
+
+- `src/screens/StaffEditEquipmentScreen.js`
+  - Pre-filled form: name, description, category
+  - Locker picker: shows only unassigned lockers or current locker
+  - Detects changes before making API calls (no-op if nothing changed)
+  - Calls PUT /equipment/:id and/or PATCH /lockers/:id/assign as needed
+
 ---
 
 ## Current System Capabilities
 
-### ✅ Working Features (Week 1 + Week 2)
+### ✅ Working Features (Week 1 + Week 2 + Week 3)
 
 #### Authentication & User Management
 1. **User Registration**
    - Email validation, password requirements
    - Duplicate email/SIT ID detection
    - Automatic JWT token generation
-   - Role assignment (student/staff/admin)
+   - **Role auto-assigned from SIT ID range** (server-side, not client-supplied)
+     - 1,000,000–1,999,999 → staff (lands on Staff Dashboard)
+     - 2,000,000–3,000,000 → student (lands on Login with success message)
+   - Invalid SIT IDs rejected at registration
 
 2. **User Login**
    - Secure password verification with bcrypt
@@ -409,6 +501,26 @@ POST /api/transactions/update-due-date
    - View expired transactions
    - Calculate borrow duration for completed items
    - Pull-to-refresh functionality
+
+#### Staff Portal (NEW - Week 3)
+8. **Staff Dashboard**
+   - Green-themed UI separate from student view
+   - Lists all equipment with locker compartment, stock badge (colour-coded), and category
+   - **Stock Up** — modal to enter units to add; updates total_quantity + available_quantity
+   - **Edit** — navigate to full equipment edit screen
+   - Pull-to-refresh; reloads on screen focus
+   - Logout button
+
+9. **Edit Equipment**
+   - Edit name, description, and category (partial updates — unchanged fields not sent)
+   - Locker reassignment picker (shows only unassigned or currently-assigned lockers)
+   - Auto-clears old locker assignment when switching to a new one
+   - No-op detection: skips API calls if nothing changed
+
+10. **Staff-Only API Endpoints**
+    - `PATCH /api/equipment/:id/stock` — add stock units (requires staff role)
+    - `PUT /api/equipment/:id` — edit equipment details (requires staff role)
+    - `PATCH /api/lockers/:locker_id/assign` — reassign locker to equipment (requires staff role)
 
 #### Backend API Endpoints
 8. **Authentication Endpoints**
@@ -499,10 +611,12 @@ POST /api/transactions/update-due-date
 - [x] Fixed locker assignment per equipment type
 - [x] Database migration (upgrade-v3.sql)
 - [x] Locker-equipment binding in DB (13 equipment → 13 lockers assigned)
-- [ ] Lab tech dashboard
-- [ ] Low-stock alerts
-- [ ] Replenishment unlock feature
-- [ ] Quantity update functionality
+- [x] Staff registration with auto-role from SIT ID range
+- [x] Staff Dashboard (inventory overview, stock up, edit)
+- [x] Edit Equipment screen (details + locker reassignment)
+- [x] Staff-only API endpoints (stock, edit equipment, reassign locker)
+- [ ] Low-stock alerts / notifications
+- [ ] Replenishment unlock feature (RFID for lab tech restocking)
 - [ ] Arduino RFID integration testing
 
 ### Week 4 - Testing & Polish
@@ -635,6 +749,11 @@ The AEWRS project has successfully completed Week 2 with a fully functional stud
 - Borrow logic refactored: no longer relies on locker `status` as availability gate
 - Locker status updates removed from borrow/cancel/return flows (cleaner separation of concerns)
 - Debugged and applied live DB fix for equipment-locker assignments
+- Staff registration: role auto-assigned server-side from SIT ID range (1M–2M = staff, 2M–3M = student)
+- Staff Dashboard built: green-themed, inventory overview with stock-up modal and edit navigation
+- Edit Equipment screen: partial field updates + locker reassignment with automatic conflict resolution
+- 3 new staff-only API endpoints with verifyToken + requireStaff middleware
+- Fixed stale `current_equipment_id` column reference in lockerRoutes GET /
 
 ### Current Status
 The project is **on track** for the 1-month deadline:
@@ -656,6 +775,8 @@ The project is **on track** for the 1-month deadline:
 - **Detailed UI:** Equipment details, locker location, collection instructions
 - **RFID Ready:** Endpoints created for Arduino hardware integration
 - **Fixed Locker Mapping:** Each equipment type has a dedicated, permanent compartment
+- **Staff Portal:** Separate green-themed dashboard for inventory management
+- **Server-Side Role Assignment:** SIT ID range determines role — no client trust required
 - **Secure by Design:** JWT tokens, role-based access, parameterized queries
 
 ### Next Phase Preview
@@ -671,5 +792,5 @@ The system architecture is production-ready, secure, and scalable. The student-f
 ---
 
 **Generated:** February 27, 2026
-**Last Updated:** March 1, 2026 — Week 3 session: Fixed locker assignment system
-**Next Update:** After Week 3 completion (Lab Tech Dashboard + Arduino RFID integration)
+**Last Updated:** March 1, 2026 — Week 3 session 2: Staff portal & inventory management
+**Next Update:** After Week 3 completion (Low-stock alerts + Arduino RFID integration)

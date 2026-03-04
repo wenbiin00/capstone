@@ -1,6 +1,43 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
+const { verifyToken, requireStaff } = require('../middleware/authMiddleware');
+
+// GET /active — staff: all active borrows with overdue flag
+router.get('/active', verifyToken, requireStaff, async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        t.transaction_id,
+        t.user_id,
+        u.sit_id,
+        u.name AS user_name,
+        u.email,
+        t.equipment_id,
+        e.name AS equipment_name,
+        e.category,
+        t.locker_id,
+        l.compartment_number,
+        t.status,
+        t.borrow_time,
+        t.due_date,
+        t.created_at,
+        CASE
+          WHEN t.due_date < CURRENT_DATE AND t.status IN ('active', 'pending_return') THEN true
+          ELSE false
+        END AS is_overdue
+      FROM transactions t
+      JOIN users u ON t.user_id = u.user_id
+      JOIN equipment e ON t.equipment_id = e.equipment_id
+      LEFT JOIN lockers l ON t.locker_id = l.locker_id
+      WHERE t.status IN ('pending_pickup', 'active', 'pending_return')
+      ORDER BY is_overdue DESC, t.due_date ASC NULLS LAST, t.created_at DESC
+    `);
+    res.json({ success: true, count: result.rows.length, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // GET all transactions
 router.get('/', async (req, res) => {
