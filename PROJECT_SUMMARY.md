@@ -2,7 +2,7 @@
 
 **Project Name:** Advanced Equipment and Warehouse Resource System (AEWRS)
 **Development Period:** November 2024 - March 2026
-**Status:** Week 3 In Progress - Staff Portal, Low-Stock Alerts & Active Borrows View Implemented
+**Status:** Week 3 In Progress - Staff Portal, Add Equipment, Overdue Warnings Implemented
 **Timeline:** 1-month sprint to completion
 
 ---
@@ -169,7 +169,11 @@ const token = jwt.sign({
 - `pending_return` - Student indicated return intention
 - `completed` - Equipment returned and locker released
 - `cancelled` - Transaction cancelled by user/system
-- `expired` - Transaction expired (not picked up in time)
+- `expired` - Uncollected request expired (pending_pickup past due date only)
+
+**Overdue Handling:**
+- `pending_pickup` past due date → auto-expired (item never collected; quantity restored)
+- `active` or `pending_return` past due date → remain in student's active borrows with bright red ⚠ OVERDUE warning; only move to history after physical return
 
 **Critical Flow:**
 1. Student requests borrow via app → status = `pending_pickup`
@@ -460,6 +464,7 @@ POST /api/transactions/update-due-date
   - Added collapsible low-stock alert banner above equipment list
   - Shows item count, per-item qty, and direct "Restock" button per low-stock item
   - Added "Borrows" button in header → navigates to StaffActiveBorrowsScreen
+  - Added "+ Add New Equipment" dashed button as FlatList ListHeaderComponent
 
 - `src/screens/StaffActiveBorrowsScreen.js` (NEW)
   - Stats bar: Total / Pending / Active / Overdue counts
@@ -476,6 +481,34 @@ POST /api/transactions/update-due-date
 
 - `aewrs-mobile/.env`
   - Updated IP from 192.168.68.65 → 192.168.68.51 (machine IP changed)
+
+### Week 3: Add Equipment & Overdue Warnings (Session 4)
+- `src/routes/equipmentRoutes.js`
+  - Added `POST /` (staff-only) — create new equipment type
+  - Body: `{ name, description, category, total_quantity, low_stock_threshold }`
+  - Sets `available_quantity = total_quantity` on creation
+  - Returns full created equipment row
+
+- `src/routes/transactionRoutes.js`
+  - Modified `expireOverdue()` to only expire `pending_pickup` transactions (never collected past due)
+  - `active` and `pending_return` items past due date are **no longer auto-expired** — they stay visible to students with overdue warnings until physically returned
+
+- `src/screens/StaffAddEquipmentScreen.js` (NEW)
+  - Form fields: Name (required), Description, Category, Initial Quantity, Low Stock Alert threshold
+  - Quantity + threshold rendered side-by-side
+  - Locker picker showing only unassigned compartments; defaults to "No Locker" (assign later via Edit)
+  - On save: `POST /equipment` then optionally `PATCH /lockers/:id/assign` if locker chosen
+  - Success alert → navigate back to Staff Dashboard
+
+- `src/screens/ActiveTransactionsScreen.js` (modified)
+  - Added `isActiveOverdue` flag: `overdue && (active || pending_return)`
+  - Overdue active/pending_return cards get dark red left border + pink-tinted background
+  - Added inline `⚠ OVERDUE — please return immediately` warning banner inside each overdue card
+  - Status badge for overdue items: dark red "⚠ OVERDUE" (active) or "⚠ OVERDUE – RETURN NOW" (pending_return)
+  - Non-overdue status badges unchanged
+
+- `src/navigation/AppNavigator.js`
+  - Added StaffAddEquipmentScreen import and Stack.Screen registration (green header)
 
 ---
 
@@ -586,6 +619,20 @@ POST /api/transactions/update-due-date
     - Sorted by: overdue first, then earliest due date, then newest
     - Pull-to-refresh; reloads on screen focus
 
+13. **Add New Equipment — StaffAddEquipmentScreen (NEW - Week 3 Session 4)**
+    - Accessible via "+ Add New Equipment" button at top of Staff Dashboard equipment list
+    - Fields: Name (required), Description, Category, Initial Quantity, Low Stock Threshold
+    - Locker picker: lists only unassigned compartments; "No Locker" option to assign later
+    - Creates equipment via `POST /equipment`, then optionally assigns locker via `PATCH /lockers/:id/assign`
+    - Navigates back to dashboard on success with confirmation alert
+
+14. **Overdue Warning for Students (NEW - Week 3 Session 4)**
+    - Items past their due date that have been picked up remain in **My Borrows** (not moved to history)
+    - Card shows: dark red left border, pink background tint, inline warning banner, red "⚠ OVERDUE" badge
+    - `pending_return` overdue items show "⚠ OVERDUE – RETURN NOW" badge
+    - Only uncollected (`pending_pickup`) requests are auto-expired — quantity restored when never picked up
+    - Item moves to history only after student physically returns it via RFID (status → `completed`)
+
 #### Backend API Endpoints
 13. **Authentication Endpoints**
    - POST /api/auth/register - User registration
@@ -595,7 +642,8 @@ POST /api/transactions/update-due-date
 14. **Equipment Endpoints**
     - GET /api/equipment - List all equipment
     - GET /api/equipment/:id - Get equipment details
-    - GET /api/equipment/low-stock - Items below threshold (staff only) **NEW**
+    - GET /api/equipment/low-stock - Items below threshold (staff only)
+    - POST /api/equipment - Create new equipment type (staff only) **NEW**
     - PATCH /api/equipment/:id/stock - Add stock units (staff only)
     - PUT /api/equipment/:id - Edit equipment details (staff only)
 
@@ -625,8 +673,6 @@ POST /api/transactions/update-due-date
 - Transaction state machine fully implemented, needs end-to-end testing with physical lockers
 
 ### ❌ Not Yet Implemented
-- Add new equipment (staff can edit/stock existing items only)
-- Overdue auto-expiry (scheduled job to mark transactions as expired)
 - Equipment replenishment workflow (RFID unlock for lab tech restocking)
 - Admin panel for user and equipment management
 - Arduino firmware integration and testing
@@ -687,8 +733,9 @@ POST /api/transactions/update-due-date
 - [x] Low-stock alert banner on Staff Dashboard
 - [x] Active Borrows screen (all active borrows, overdue detection, filter tabs)
 - [x] GET /equipment/low-stock and GET /transactions/active endpoints
-- [ ] Add new equipment (staff can only edit existing)
-- [ ] Overdue auto-expiry (scheduled job)
+- [x] Add new equipment (StaffAddEquipmentScreen + POST /equipment endpoint)
+- [x] Overdue auto-expiry for uncollected requests (pending_pickup only)
+- [x] Student overdue warning: bright red banner in My Borrows for items past due but not returned
 - [ ] Replenishment unlock feature (RFID for lab tech restocking)
 - [ ] Arduino RFID integration testing
 
@@ -771,7 +818,7 @@ NODE_ENV=production
 
 ### Code Metrics
 - **Backend Files:** 20+ route/middleware files
-- **Frontend Screens:** 9 screens (Login, Register, EquipmentList, BorrowEquipment, ActiveTransactions, TransactionHistory, StaffDashboard, StaffEditEquipment, StaffActiveBorrows)
+- **Frontend Screens:** 10 screens (Login, Register, EquipmentList, BorrowEquipment, ActiveTransactions, TransactionHistory, StaffDashboard, StaffEditEquipment, StaffActiveBorrows, StaffAddEquipment)
 - **Database Tables:** 5 core tables + 2 views
 - **API Endpoints:** 25+ endpoints (15+ protected routes)
 - **Lines of Code:** ~5000+ lines (estimated)
@@ -831,6 +878,8 @@ The AEWRS project has successfully completed Week 2 with a fully functional stud
 - **Session 3:** Active Borrows screen with stats bar, filter tabs (All/Pending/Active/Overdue), red overdue highlighting
 - **Session 3:** `GET /equipment/low-stock` and `GET /transactions/active` staff-protected endpoints
 - **Session 3:** Fixed `api.config.js` baseURL bug (was using raw env var, ignoring fallback); updated machine IP
+- **Session 4:** Add new equipment screen + `POST /equipment` endpoint (staff-only)
+- **Session 4:** Overdue auto-expiry scoped to `pending_pickup` only; `active`/`pending_return` stay in student My Borrows with bright red ⚠ warning banner until physically returned
 
 ### Current Status
 The project is **on track** for the 1-month deadline:
@@ -852,22 +901,20 @@ The project is **on track** for the 1-month deadline:
 - **Detailed UI:** Equipment details, locker location, collection instructions
 - **RFID Ready:** Endpoints created for Arduino hardware integration
 - **Fixed Locker Mapping:** Each equipment type has a dedicated, permanent compartment
-- **Staff Portal:** Separate green-themed dashboard for inventory management
+- **Staff Portal:** Separate green-themed dashboard for inventory management, including add/edit/stock-up
+- **Smart Overdue Handling:** Uncollected expired requests auto-expired; borrowed items stay visible until physically returned with red warning
 - **Server-Side Role Assignment:** SIT ID range determines role — no client trust required
 - **Secure by Design:** JWT tokens, role-based access, parameterized queries
 
 ### Next Phase Preview
-Week 3 will focus on lab tech and admin features:
-- Equipment overview dashboard
-- Low-stock alerts and notifications
-- Replenishment unlock workflow
-- User and equipment management
-- Arduino RFID hardware integration
+Remaining Week 3 items:
+- Replenishment unlock workflow (RFID for lab tech restocking)
+- Arduino RFID hardware integration and testing
 
 The system architecture is production-ready, secure, and scalable. The student-facing features are fully implemented and tested. The backend is running stably with proper error handling and database transactions.
 
 ---
 
 **Generated:** February 27, 2026
-**Last Updated:** March 4, 2026 — Week 3 session 3: Low-stock alerts, Active Borrows view, api.config.js bug fix
-**Next Update:** After Week 3 completion (Add equipment, overdue expiry, Arduino RFID integration)
+**Last Updated:** March 4, 2026 — Week 3 session 4: Add new equipment, overdue warnings (student My Borrows), expiry scoped to pending_pickup only
+**Next Update:** After Week 3 completion (replenishment unlock, Arduino RFID integration)
