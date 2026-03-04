@@ -60,6 +60,39 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// POST / — staff: create new equipment type
+router.post('/', verifyToken, requireStaff, async (req, res) => {
+  try {
+    const { name, description, category, total_quantity, low_stock_threshold } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Equipment name is required' });
+    }
+
+    const qty = parseInt(total_quantity, 10);
+    if (isNaN(qty) || qty < 0) {
+      return res.status(400).json({ success: false, error: 'total_quantity must be a non-negative integer' });
+    }
+
+    const threshold = low_stock_threshold !== undefined ? parseInt(low_stock_threshold, 10) : 2;
+
+    const result = await pool.query(
+      `INSERT INTO equipment (name, description, category, total_quantity, available_quantity, low_stock_threshold)
+       VALUES ($1, $2, $3, $4, $4, $5)
+       RETURNING *`,
+      [name.trim(), description?.trim() || null, category?.trim() || null, qty, threshold]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Equipment created successfully',
+      data: result.rows[0]
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // PATCH /:id/stock — staff: add units to inventory
 router.patch('/:id/stock', verifyToken, requireStaff, async (req, res) => {
   try {

@@ -3,9 +3,33 @@ const router = express.Router();
 const pool = require('../config/database');
 const { verifyToken, requireStaff } = require('../middleware/authMiddleware');
 
+// Helper: expire overdue UNCOLLECTED (pending_pickup) transactions and restore quantities.
+// Active / pending_return items past due date remain visible to students with an overdue warning
+// and only move to history once the student physically returns the equipment.
+async function expireOverdue() {
+  await pool.query(`
+    WITH expired AS (
+      UPDATE transactions
+      SET status = 'expired', updated_at = CURRENT_TIMESTAMP
+      WHERE status = 'pending_pickup'
+        AND due_date IS NOT NULL
+        AND due_date < CURRENT_DATE
+      RETURNING equipment_id
+    ),
+    grouped AS (
+      SELECT equipment_id, COUNT(*)::int AS cnt FROM expired GROUP BY equipment_id
+    )
+    UPDATE equipment e
+    SET available_quantity = LEAST(e.available_quantity + g.cnt, e.total_quantity)
+    FROM grouped g
+    WHERE e.equipment_id = g.equipment_id
+  `);
+}
+
 // GET /active — staff: all active borrows with overdue flag
 router.get('/active', verifyToken, requireStaff, async (req, res) => {
   try {
+    await expireOverdue(); // auto-expire before fetching
     const result = await pool.query(`
       SELECT
         t.transaction_id,
@@ -72,6 +96,7 @@ router.get('/', async (req, res) => {
 // GET transactions by user
 router.get('/user/:sitId', async (req, res) => {
   try {
+    await expireOverdue(); // auto-expire before fetching
     const { sitId } = req.params;
     const result = await pool.query(`
       SELECT
