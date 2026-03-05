@@ -20,7 +20,7 @@ router.post('/scan', async (req, res) => {
 
     // Get user by RFID
     const userResult = await client.query(
-      'SELECT user_id, sit_id, name FROM users WHERE rfid_uid = $1',
+      'SELECT user_id, sit_id, name, role FROM users WHERE rfid_uid = $1',
       [rfid_uid]
     );
 
@@ -33,6 +33,36 @@ router.post('/scan', async (req, res) => {
     }
 
     const user = userResult.rows[0];
+
+    // STAFF / ADMIN: grant access for restocking — no transaction required
+    if (user.role === 'staff' || user.role === 'admin') {
+      const lockerResult = await client.query(`
+        SELECT l.compartment_number,
+               e.name           AS equipment_name,
+               e.available_quantity,
+               e.total_quantity,
+               e.equipment_id
+        FROM lockers l
+        LEFT JOIN equipment e ON l.assigned_equipment_id = e.equipment_id
+        WHERE l.locker_id = $1
+      `, [locker_id]);
+
+      await client.query('COMMIT');
+
+      const info = lockerResult.rows[0] || {};
+      return res.json({
+        success: true,
+        action: 'restock',
+        message: 'Staff access granted — locker unlocked for restocking',
+        data: {
+          staff_name: user.name,
+          compartment_number: info.compartment_number,
+          equipment_name: info.equipment_name || 'Unassigned locker',
+          available_quantity: info.available_quantity ?? null,
+          total_quantity: info.total_quantity ?? null,
+        }
+      });
+    }
 
     // Check for pending_pickup transaction at this locker for this user
     const pickupResult = await client.query(`

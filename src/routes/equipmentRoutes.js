@@ -172,4 +172,58 @@ router.put('/:id', verifyToken, requireStaff, async (req, res) => {
   }
 });
 
+// DELETE /:id — staff: remove equipment type
+router.delete('/:id', verifyToken, requireStaff, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    await client.query('BEGIN');
+
+    // Block deletion if any active transactions exist
+    const activeCheck = await client.query(
+      `SELECT COUNT(*)::int AS cnt FROM transactions
+       WHERE equipment_id = $1
+         AND status IN ('pending_pickup', 'active', 'pending_return')`,
+      [id]
+    );
+    if (activeCheck.rows[0].cnt > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        success: false,
+        error: `Cannot delete: ${activeCheck.rows[0].cnt} active transaction(s) still in progress for this equipment`
+      });
+    }
+
+    // Unassign any locker tied to this equipment
+    await client.query(
+      'UPDATE lockers SET assigned_equipment_id = NULL WHERE assigned_equipment_id = $1',
+      [id]
+    );
+
+    // Delete the equipment
+    const result = await client.query(
+      'DELETE FROM equipment WHERE equipment_id = $1 RETURNING name',
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Equipment not found' });
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `${result.rows[0].name} deleted successfully`
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
