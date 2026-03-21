@@ -2,7 +2,7 @@
 
 **Project Name:** Advanced Equipment and Warehouse Resource System (AEWRS)
 **Development Period:** November 2024 - March 2026
-**Status:** Week 3 Complete - All Software Features Implemented
+**Status:** Week 4 Complete - Full System Working (Software + Hardware)
 **Timeline:** 1-month sprint to completion
 
 ---
@@ -738,17 +738,20 @@ POST /api/transactions/update-due-date
     - GET /api/users - List all users with RFID status (staff only)
     - PATCH /api/users/:id/rfid - Assign or clear a user's RFID UID (staff only; 409 on duplicate UID)
 
-### ✅ Hardware Integration (Week 4)
+### ✅ Hardware Integration (Week 4) — COMPLETE
 - Arduino Uno + RC522 RFID reader connected via USB serial to Mac
 - Serial bridge (`serial-bridge/serial-bridge.js`) reads Arduino output and forwards to Express backend via HTTP
-- Solenoid lock controlled via IRF520 MOSFET on pin D7
-- IR sensor (D2) and HX711 load cell (D4/D5) for item presence detection
-- End-to-end flow tested: borrow in app → tap RFID card → backend authorises → bridge sends UNLOCK → solenoid triggers → transaction status updates in app
+- Solenoid lock controlled via IRF520 MOSFET on pin D7 — physically tested and working
+- IR sensor (D2) and HX711 load cell (D4/D5) for item presence detection — readings confirmed accurate
+- Sensor state sent every 10 seconds → bridge → backend → stored in `lockers` table
+- Mobile app shows live sensor pill on pending pickup cards: "📦 Item is in the locker" / "📭 Locker is currently empty"
+- `UNLOCK_DURATION` tuned to 10 seconds to give sufficient time for item pickup/return
+- Full end-to-end flow verified: borrow in app → tap RFID → solenoid unlocks → item taken → status updates in app → sensor shows empty
 
 ### ❌ Not Yet Implemented
-- Physical solenoid wiring verification (software + serial bridge confirmed working; hardware circuit to be verified)
 - Overdue auto-expiry scheduled job (currently runs on API call only)
 - Cloud deployment (Railway config ready)
+- Wireless operation (ESP32 swap planned — Arduino Uno requires USB tether to Mac for serial bridge)
 
 ---
 
@@ -795,7 +798,7 @@ POST /api/transactions/update-due-date
 - [x] Enhanced transaction state machine
 - [x] Test borrow workflow (tested successfully)
 
-### Week 3 - Lab Tech Features + Locker System (IN PROGRESS)
+### Week 3 - Lab Tech Features + Locker System (COMPLETE ✅)
 - [x] Fixed locker assignment per equipment type
 - [x] Database migration (upgrade-v3.sql)
 - [x] Locker-equipment binding in DB (13 equipment → 13 lockers assigned)
@@ -816,15 +819,17 @@ POST /api/transactions/update-due-date
 - [x] Staff dashboard dropdown menu (⋮ button replaces separate header buttons)
 - [x] Arduino RFID integration testing (software end-to-end confirmed working)
 
-### Week 4 - Testing & Polish
+### Week 4 - Hardware Integration & Polish (COMPLETE ✅)
 - [x] Arduino firmware written (rfid_locker.ino — RC522 + HX711 + IR + solenoid)
 - [x] Serial bridge written (serial-bridge.js — USB serial → HTTP → Express)
-- [x] End-to-end RFID scan → backend → UNLOCK flow tested
-- [ ] Physical solenoid circuit verification
-- [ ] Edge case handling (card not registered, locker mismatch, etc.)
-- [ ] UI/UX improvements
-- [ ] Documentation completion
-- [ ] Demo preparation
+- [x] End-to-end RFID scan → backend → UNLOCK flow tested and working
+- [x] Physical solenoid circuit verified — unlocking and locking correctly
+- [x] IR sensor and HX711 weight sensor readings confirmed accurate
+- [x] Sensor state stored in DB and displayed live in mobile app (item present/empty pill)
+- [x] Sensor data upgrade migration (upgrade-v4.sql — item_present, weight_grams, ir_detected columns)
+- [x] POST /api/lockers/:id/sensor endpoint for Arduino sensor reporting
+- [x] UNLOCK_DURATION tuned to 10 seconds
+- [x] Full system tested end-to-end: borrow → RFID tap → unlock → item taken → return → RFID tap → complete
 
 ---
 
@@ -966,11 +971,11 @@ The AEWRS project has successfully completed Week 2 with a fully functional stud
 - **Session 5:** Staff Dashboard dropdown menu (⋮) replaces separate Borrows/Users/Logout header buttons
 
 ### Current Status
-The project is **on track** for the 1-month deadline:
+The project is **complete**:
 - **Week 1:** ✅ Foundation complete
 - **Week 2:** ✅ Student workflow complete
 - **Week 3:** ✅ All software features complete
-- **Week 4:** 🔄 Arduino firmware + serial bridge done; solenoid circuit verification + polish remaining
+- **Week 4:** ✅ Full hardware integration working — end-to-end system verified
 
 ### Key Success Factors
 1. **Quick problem resolution:** Resolved database column issues and backend caching within minutes
@@ -983,7 +988,8 @@ The project is **on track** for the 1-month deadline:
 - **Full Transaction Lifecycle:** pending_pickup → active → pending_return → completed
 - **Flexible Borrowing:** Users can cancel or change duration before pickup
 - **Detailed UI:** Equipment details, locker location, collection instructions
-- **Arduino Integration:** Firmware + serial bridge complete; full RFID→backend→solenoid flow tested
+- **Live Sensor Monitoring:** IR + weight sensor readings stored in DB every 10s; mobile app shows item present/absent status in real time
+- **Arduino Integration:** Firmware + serial bridge fully working; RFID→backend→solenoid→app flow verified end-to-end
 - **Fixed Locker Mapping:** Each equipment type has a dedicated, permanent compartment
 - **Staff Portal:** Separate green-themed dashboard for inventory management, including add/edit/stock-up/delete
 - **Smart Overdue Handling:** Uncollected expired requests auto-expired; borrowed items stay visible until physically returned with red warning
@@ -992,15 +998,17 @@ The project is **on track** for the 1-month deadline:
 - **User RFID Management:** Staff can assign, update, or clear RFID card bindings for any user
 - **Secure by Design:** JWT tokens, role-based access, parameterized queries, duplicate RFID UID protection
 
-### Week 4 Progress
-- Arduino firmware (`rfid_locker.ino`): RC522 RFID reader, HX711 load cell, IR sensor, solenoid via MOSFET
-- Serial bridge (`serial-bridge.js`): reads `SCAN:<UID>` from Arduino, calls `/api/rfid/scan`, sends `UNLOCK`/`DENY` back
-- Remaining: solenoid circuit verification, edge case handling, UI polish, demo prep
+### Week 4 Summary
+- Arduino firmware (`rfid_locker.ino`): RC522 RFID, HX711 load cell, IR sensor, solenoid via IRF520 MOSFET — all physically tested
+- Serial bridge (`serial-bridge.js`): reads `SCAN:<UID>` from Arduino, calls `/api/rfid/scan`, sends `UNLOCK`/`DENY` back; also forwards `SENSOR:` readings every 10s
+- Sensor data pipeline: Arduino → bridge → `POST /lockers/:id/sensor` → DB → mobile app live pill display
+- `upgrade-v4.sql`: added `item_present`, `weight_grams`, `ir_detected`, `last_sensor_update` to lockers table
+- `UNLOCK_DURATION` tuned to 10 seconds based on physical testing
 
-The system architecture is production-ready, secure, and scalable. The student-facing features are fully implemented and tested. The backend is running stably with proper error handling and database transactions.
+The system is fully complete and working end-to-end. All software and hardware components are integrated and tested.
 
 ---
 
 **Generated:** February 27, 2026
-**Last Updated:** March 18, 2026 — Week 4: Arduino firmware (rfid_locker.ino), serial bridge (serial-bridge.js), end-to-end RFID flow tested
-**Next Update:** After demo preparation complete
+**Last Updated:** March 22, 2026 — Week 4 complete: full hardware integration verified, sensor monitoring in app, solenoid tuned to 10s unlock
+**Status:** ✅ Project complete — all features working end-to-end

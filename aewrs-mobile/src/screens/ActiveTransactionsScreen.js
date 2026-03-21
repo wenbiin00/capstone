@@ -14,6 +14,7 @@ import api from '../../api.config';
 
 export default function ActiveTransactionsScreen({ navigation }) {
   const [transactions, setTransactions] = useState([]);
+  const [lockerSensors, setLockerSensors] = useState({}); // locker_id → sensor data
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -38,11 +39,23 @@ export default function ActiveTransactionsScreen({ navigation }) {
       const response = await api.get(`/transactions/user/${sitId}`);
 
       if (response.data.success) {
-        // Filter for active, pending pickup, and pending return transactions
         const activeTransactions = response.data.data.filter(
           (t) => t.status === 'active' || t.status === 'pending_pickup' || t.status === 'pending_return'
         );
         setTransactions(activeTransactions);
+
+        // Fetch locker sensor states for all lockers in these transactions
+        const lockerIds = [...new Set(activeTransactions.map(t => t.locker_id).filter(Boolean))];
+        if (lockerIds.length > 0) {
+          try {
+            const lockersRes = await api.get('/lockers');
+            if (lockersRes.data.success) {
+              const sensorMap = {};
+              lockersRes.data.data.forEach(l => { sensorMap[l.locker_id] = l; });
+              setLockerSensors(sensorMap);
+            }
+          } catch (_) {}
+        }
       }
     } catch (error) {
       console.error('Error fetching transactions:', error);
@@ -266,6 +279,24 @@ export default function ActiveTransactionsScreen({ navigation }) {
                 </View>
               )}
             </View>
+
+            {(() => {
+              const sensor = lockerSensors[item.locker_id];
+              if (!sensor || sensor.last_sensor_update === null) return null;
+              const present = sensor.item_present;
+              return (
+                <View style={[styles.sensorPill, present ? styles.sensorPillPresent : styles.sensorPillEmpty]}>
+                  <Text style={styles.sensorPillText}>
+                    {present ? '📦 Item is in the locker' : '📭 Locker is currently empty'}
+                  </Text>
+                  {sensor.weight_grams !== null && (
+                    <Text style={styles.sensorPillSub}>
+                      {sensor.weight_grams.toFixed(1)}g · IR: {sensor.ir_detected ? 'detected' : 'clear'}
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
 
             <View style={styles.pendingBox}>
               <Text style={styles.pendingTitle}>🎯 Collection Instructions</Text>
@@ -632,5 +663,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  sensorPill: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  sensorPillPresent: {
+    backgroundColor: '#E8F5E9',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  sensorPillEmpty: {
+    backgroundColor: '#FFF3E0',
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
+  sensorPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#333',
+  },
+  sensorPillSub: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 2,
   },
 });

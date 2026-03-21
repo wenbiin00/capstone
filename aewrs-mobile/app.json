@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "AEWRS",
+    "slug": "aewrs-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "aewrs",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

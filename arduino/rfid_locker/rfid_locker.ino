@@ -35,9 +35,10 @@
 
 // ── Config ───────────────────────────────────
 #define WEIGHT_THRESHOLD  20.0   // grams — above this = item present
-#define UNLOCK_DURATION   5000   // ms to hold solenoid open
+#define UNLOCK_DURATION   10000   // ms to hold solenoid open
 #define RESPONSE_TIMEOUT  8000   // ms to wait for bridge response before giving up
-#define STATUS_INTERVAL   3000   // ms between periodic sensor prints
+#define STATUS_INTERVAL   3000   // ms between periodic Serial prints
+#define SENSOR_INTERVAL   10000  // ms between SENSOR: reports to bridge (→ backend)
 #define DEBOUNCE_MS       2000   // ms min between scans
 
 // ── Objects ──────────────────────────────────
@@ -49,6 +50,7 @@ bool waitingForResponse = false;
 unsigned long responseDeadline = 0;
 unsigned long lastScanTime = 0;
 unsigned long lastStatusPrint = 0;
+unsigned long lastSensorReport = 0;
 float calibrationFactor = 1050;
 
 // ── Helpers ──────────────────────────────────
@@ -133,15 +135,23 @@ void setup() {
 // ── Main Loop ────────────────────────────────
 void loop() {
 
-  // ── Periodic sensor status print ───────────
+  // ── Periodic sensor status print (Serial Monitor) ──
   if (!waitingForResponse && millis() - lastStatusPrint >= STATUS_INTERVAL) {
     lastStatusPrint = millis();
     float w = readWeight();
+    bool ir = itemDetectedIR();
     Serial.print("IR: ");
-    Serial.print(itemDetectedIR() ? "1 (DETECTED)" : "0 (EMPTY)");
+    Serial.print(ir ? "1 (DETECTED)" : "0 (EMPTY)");
     Serial.print(" | Weight: ");
     Serial.print(w, 2);
-    Serial.println("g");
+    Serial.print("g");
+    Serial.println((ir || w > WEIGHT_THRESHOLD) ? " | ITEM PRESENT" : " | LOCKER EMPTY");
+  }
+
+  // ── Periodic SENSOR: report to bridge → backend ──
+  if (!waitingForResponse && millis() - lastSensorReport >= SENSOR_INTERVAL) {
+    lastSensorReport = millis();
+    sendSensorState();
   }
 
   // ── Waiting for bridge response ─────────────

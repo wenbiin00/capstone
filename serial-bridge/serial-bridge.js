@@ -86,6 +86,27 @@ parser.on('data', async (line) => {
     return;
   }
 
+  // SENSOR:IR=<0|1>,WEIGHT=<grams> — forward sensor state to backend
+  if (line.startsWith('SENSOR:')) {
+    const parts      = line.replace('SENSOR:', '').split(',');
+    const irPart     = parts.find(p => p.startsWith('IR='));
+    const weightPart = parts.find(p => p.startsWith('WEIGHT='));
+
+    if (irPart && weightPart) {
+      const ir_detected  = parseInt(irPart.replace('IR=', '')) === 1;
+      const weight_grams = parseFloat(weightPart.replace('WEIGHT=', ''));
+
+      console.log(`[Bridge] Sensor — IR: ${ir_detected ? 'DETECTED' : 'EMPTY'}, Weight: ${weight_grams.toFixed(1)}g`);
+
+      try {
+        await axios.post(`${API_BASE_URL}/lockers/${LOCKER_ID}/sensor`, { ir_detected, weight_grams });
+      } catch (err) {
+        console.error('[Bridge] Sensor update failed:', err.response?.data?.error || err.message);
+      }
+    }
+    return;
+  }
+
   // Unknown line — log it
   console.log(`[Arduino] ${line}`);
 });

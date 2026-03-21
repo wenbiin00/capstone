@@ -12,6 +12,10 @@ router.get('/', async (req, res) => {
         l.compartment_number,
         l.status,
         l.assigned_equipment_id,
+        l.item_present,
+        l.weight_grams,
+        l.ir_detected,
+        l.last_sensor_update,
         e.name as equipment_name,
         e.category as equipment_category
       FROM lockers l
@@ -108,6 +112,37 @@ router.post('/access', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.json({ access: 'deny', reason: 'Server error' });
+  }
+});
+
+// POST /:locker_id/sensor — Arduino: update sensor readings (no auth, internal use)
+router.post('/:locker_id/sensor', async (req, res) => {
+  try {
+    const { locker_id } = req.params;
+    const { ir_detected, weight_grams } = req.body;
+
+    if (ir_detected === undefined || weight_grams === undefined) {
+      return res.status(400).json({ success: false, error: 'Missing ir_detected or weight_grams' });
+    }
+
+    // Item is present if IR detects something OR weight is above threshold
+    const item_present = (ir_detected === true || ir_detected === 1) || weight_grams > 20;
+
+    const result = await pool.query(
+      `UPDATE lockers
+       SET ir_detected = $1, weight_grams = $2, item_present = $3, last_sensor_update = NOW()
+       WHERE locker_id = $4
+       RETURNING locker_id, compartment_number, ir_detected, weight_grams, item_present, last_sensor_update`,
+      [ir_detected, weight_grams, item_present, locker_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Locker not found' });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
