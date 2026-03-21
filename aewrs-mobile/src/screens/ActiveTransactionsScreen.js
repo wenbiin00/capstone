@@ -186,9 +186,10 @@ export default function ActiveTransactionsScreen({ navigation }) {
     const daysUntilDue = getDaysUntilDue(item.due_date);
     const isPendingPickup = item.status === 'pending_pickup';
     const isPendingReturn = item.status === 'pending_return';
+    const isActiveOverdue = overdue && (item.status === 'active' || item.status === 'pending_return');
 
     return (
-      <View style={[styles.card, overdue && styles.cardOverdue]}>
+      <View style={[styles.card, isActiveOverdue && styles.cardOverdue]}>
         <View style={styles.cardHeader}>
           <Text style={styles.equipmentName} numberOfLines={1}>
             {item.equipment_name}
@@ -197,13 +198,15 @@ export default function ActiveTransactionsScreen({ navigation }) {
             <View style={[styles.statusBadge, { backgroundColor: '#FF9800' }]}>
               <Text style={styles.statusText}>PENDING PICKUP</Text>
             </View>
+          ) : isActiveOverdue ? (
+            <View style={[styles.statusBadge, styles.statusBadgeOverdue]}>
+              <Text style={styles.statusText}>
+                {isPendingReturn ? '⚠ OVERDUE – RETURN NOW' : '⚠ OVERDUE'}
+              </Text>
+            </View>
           ) : isPendingReturn ? (
             <View style={[styles.statusBadge, { backgroundColor: '#2196F3' }]}>
               <Text style={styles.statusText}>PENDING RETURN</Text>
-            </View>
-          ) : overdue ? (
-            <View style={[styles.statusBadge, { backgroundColor: '#F44336' }]}>
-              <Text style={styles.statusText}>OVERDUE</Text>
             </View>
           ) : (
             <View style={[styles.statusBadge, { backgroundColor: '#4CAF50' }]}>
@@ -211,6 +214,14 @@ export default function ActiveTransactionsScreen({ navigation }) {
             </View>
           )}
         </View>
+
+        {isActiveOverdue && (
+          <View style={styles.overdueWarningBanner}>
+            <Text style={styles.overdueWarningText}>
+              ⚠  This item is overdue — please return it immediately
+            </Text>
+          </View>
+        )}
 
         <View style={styles.infoRow}>
           <Text style={styles.label}>Locker:</Text>
@@ -430,8 +441,26 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   cardOverdue: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#F44336',
+    borderLeftWidth: 5,
+    borderLeftColor: '#C62828',
+    backgroundColor: '#FFF5F5',
+  },
+  statusBadgeOverdue: {
+    backgroundColor: '#C62828',
+  },
+  overdueWarningBanner: {
+    backgroundColor: '#FFEBEE',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#C62828',
+  },
+  overdueWarningText: {
+    color: '#B71C1C',
+    fontSize: 13,
+    fontWeight: '700',
   },
   cardHeader: {
     flexDirection: 'row',

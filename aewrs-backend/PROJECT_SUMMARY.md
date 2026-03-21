@@ -2,7 +2,7 @@
 
 **Project Name:** Advanced Equipment and Warehouse Resource System (AEWRS)
 **Development Period:** November 2024 - March 2026
-**Status:** Week 3 In Progress - Staff Portal, Low-Stock Alerts & Active Borrows View Implemented
+**Status:** Week 3 Complete - All Software Features Implemented
 **Timeline:** 1-month sprint to completion
 
 ---
@@ -169,7 +169,11 @@ const token = jwt.sign({
 - `pending_return` - Student indicated return intention
 - `completed` - Equipment returned and locker released
 - `cancelled` - Transaction cancelled by user/system
-- `expired` - Transaction expired (not picked up in time)
+- `expired` - Uncollected request expired (pending_pickup past due date only)
+
+**Overdue Handling:**
+- `pending_pickup` past due date → auto-expired (item never collected; quantity restored)
+- `active` or `pending_return` past due date → remain in student's active borrows with bright red ⚠ OVERDUE warning; only move to history after physical return
 
 **Critical Flow:**
 1. Student requests borrow via app → status = `pending_pickup`
@@ -179,17 +183,22 @@ const token = jwt.sign({
 5. Student taps RFID → places equipment → status = `completed`
 
 ### 3. RFID Authorization Logic
-**Requirement:** RFID should only unlock for authorized transactions
+**Requirement:** RFID should only unlock for authorized transactions; staff always get restock access
 
 **Implementation Strategy:**
 ```javascript
 // When RFID card tapped:
 1. Find user by rfid_uid
-2. Check for pending_pickup OR pending_return transaction
-3. Verify locker compartment matches assigned locker
-4. If lab tech: check if low-stock replenishment authorized
+2. If staff/admin → grant restock access immediately (no transaction required), return locker/equipment info
+3. If student → check for pending_pickup OR pending_return transaction
+4. Verify locker compartment matches assigned locker
 5. Grant/deny access, log attempt, update transaction status
 ```
+
+**Staff Restock Flow:**
+- Staff RFID tap at any locker → `action: 'restock'` response + locker/equipment info
+- Arduino can show equipment name and current stock on LCD
+- No transaction created; staff physically replenishes and manually updates stock via dashboard
 
 ### 6. Staff Portal & Role-Based Registration (NEW - Week 3)
 **Decision:** Role is determined server-side from SIT ID range — clients cannot self-assign a role
@@ -460,6 +469,7 @@ POST /api/transactions/update-due-date
   - Added collapsible low-stock alert banner above equipment list
   - Shows item count, per-item qty, and direct "Restock" button per low-stock item
   - Added "Borrows" button in header → navigates to StaffActiveBorrowsScreen
+  - Added "+ Add New Equipment" dashed button as FlatList ListHeaderComponent
 
 - `src/screens/StaffActiveBorrowsScreen.js` (NEW)
   - Stats bar: Total / Pending / Active / Overdue counts
@@ -476,6 +486,73 @@ POST /api/transactions/update-due-date
 
 - `aewrs-mobile/.env`
   - Updated IP from 192.168.68.65 → 192.168.68.51 (machine IP changed)
+
+### Week 3: Add Equipment & Overdue Warnings (Session 4)
+- `src/routes/equipmentRoutes.js`
+  - Added `POST /` (staff-only) — create new equipment type
+  - Body: `{ name, description, category, total_quantity, low_stock_threshold }`
+  - Sets `available_quantity = total_quantity` on creation
+  - Returns full created equipment row
+
+- `src/routes/transactionRoutes.js`
+  - Modified `expireOverdue()` to only expire `pending_pickup` transactions (never collected past due)
+  - `active` and `pending_return` items past due date are **no longer auto-expired** — they stay visible to students with overdue warnings until physically returned
+
+- `src/screens/StaffAddEquipmentScreen.js` (NEW)
+  - Form fields: Name (required), Description, Category, Initial Quantity, Low Stock Alert threshold
+  - Quantity + threshold rendered side-by-side
+  - Locker picker showing only unassigned compartments; defaults to "No Locker" (assign later via Edit)
+  - On save: `POST /equipment` then optionally `PATCH /lockers/:id/assign` if locker chosen
+  - Success alert → navigate back to Staff Dashboard
+
+- `src/screens/ActiveTransactionsScreen.js` (modified)
+  - Added `isActiveOverdue` flag: `overdue && (active || pending_return)`
+  - Overdue active/pending_return cards get dark red left border + pink-tinted background
+  - Added inline `⚠ OVERDUE — please return immediately` warning banner inside each overdue card
+  - Status badge for overdue items: dark red "⚠ OVERDUE" (active) or "⚠ OVERDUE – RETURN NOW" (pending_return)
+  - Non-overdue status badges unchanged
+
+- `src/navigation/AppNavigator.js`
+  - Added StaffAddEquipmentScreen import and Stack.Screen registration (green header)
+
+### Week 3: Replenishment RFID, User Management & Delete Equipment (Session 5)
+- `src/routes/rfidRoutes.js` (modified)
+  - Updated user query to fetch `role` field
+  - Added staff/admin branch at top of scan handler (before student pickup/return logic)
+  - Staff RFID tap at any locker → `action: 'restock'`, returns compartment + equipment info
+  - Student logic unchanged below
+
+- `src/routes/userRoutes.js` (modified)
+  - Added `verifyToken`, `requireStaff` imports from authMiddleware
+  - Protected `GET /` with middleware; updated query to include `has_rfid` boolean and order by role/sit_id
+  - Added `PATCH /:id/rfid` (staff-only) — assign or clear a user's RFID UID
+    - Rejects duplicate UIDs (409 Conflict if UID already assigned to another user)
+    - Pass `rfid_uid: null` to clear
+
+- `src/routes/equipmentRoutes.js` (modified)
+  - Added `DELETE /:id` (staff-only) — delete equipment type
+  - Guards against deletion if any `pending_pickup`, `active`, or `pending_return` transactions exist
+  - Wraps in DB transaction: clears locker assignment, then deletes equipment atomically
+
+- `src/screens/StaffDashboardScreen.js` (modified)
+  - Replaced separate Borrows/Users/Logout header buttons with single `⋮` button
+  - Modal-based dropdown menu (top-right) with: Borrows, User Management, Logout options
+  - Tapping outside the dropdown dismisses it
+
+- `src/screens/StaffEditEquipmentScreen.js` (modified)
+  - Added `deleting` state
+  - Added `handleDelete()` with destructive-style confirmation Alert
+  - Added "Delete Equipment" red outlined button at bottom of screen with divider
+
+- `src/screens/StaffUsersScreen.js` (NEW)
+  - Stats bar: Total / Students / Staff / RFID Set counts
+  - FlatList of user cards: name, SIT ID, email, role badge (blue=student, green=staff/admin), RFID status chip
+  - "Assign RFID" / "Update" button → modal with TextInput (auto-capitalized, monospace)
+  - "Clear" button (only when `has_rfid = true`) — calls PATCH with `rfid_uid: null`
+  - Pull-to-refresh; reloads on screen focus
+
+- `src/navigation/AppNavigator.js` (modified)
+  - Added StaffUsersScreen import and `StaffUsers` screen registration (green header, "User Management" title)
 
 ---
 
@@ -586,6 +663,44 @@ POST /api/transactions/update-due-date
     - Sorted by: overdue first, then earliest due date, then newest
     - Pull-to-refresh; reloads on screen focus
 
+13. **Add New Equipment — StaffAddEquipmentScreen (NEW - Week 3 Session 4)**
+    - Accessible via "+ Add New Equipment" button at top of Staff Dashboard equipment list
+    - Fields: Name (required), Description, Category, Initial Quantity, Low Stock Threshold
+    - Locker picker: lists only unassigned compartments; "No Locker" option to assign later
+    - Creates equipment via `POST /equipment`, then optionally assigns locker via `PATCH /lockers/:id/assign`
+    - Navigates back to dashboard on success with confirmation alert
+
+14. **Overdue Warning for Students (NEW - Week 3 Session 4)**
+    - Items past their due date that have been picked up remain in **My Borrows** (not moved to history)
+    - Card shows: dark red left border, pink background tint, inline warning banner, red "⚠ OVERDUE" badge
+    - `pending_return` overdue items show "⚠ OVERDUE – RETURN NOW" badge
+    - Only uncollected (`pending_pickup`) requests are auto-expired — quantity restored when never picked up
+    - Item moves to history only after student physically returns it via RFID (status → `completed`)
+
+15. **Replenishment RFID Unlock (NEW - Week 3 Session 5)**
+    - Staff RFID tap at any locker is always granted — no pending transaction required
+    - Arduino receives `action: 'restock'` + locker compartment + equipment name + current stock info
+    - Enables lab staff to open any compartment for physical replenishment without a borrow flow
+
+16. **User Management Screen (NEW - Week 3 Session 5)**
+    - Accessible from Staff Dashboard `⋮` menu → "User Management"
+    - Shows all registered users with role badge, SIT ID, email, and RFID registration status
+    - Stats bar: Total / Students / Staff / RFID Set at a glance
+    - **Assign / Update RFID:** opens modal to enter UID string; duplicate UID rejection (409)
+    - **Clear RFID:** destructive confirm to remove card binding from a user
+    - Pull-to-refresh; reloads on screen focus
+
+17. **Delete Equipment (NEW - Week 3 Session 5)**
+    - Staff can delete equipment types via the Edit Equipment screen (red button at bottom)
+    - Server-side guard: rejects deletion if any active borrows exist (returns count in error message)
+    - Atomic DB transaction: clears locker assignment first, then deletes equipment row
+    - Confirmation Alert with destructive style before proceeding
+
+18. **Staff Dashboard Dropdown Menu (NEW - Week 3 Session 5)**
+    - Replaced three separate header buttons (Borrows, Users, Logout) with a single `⋮` button
+    - Modal-based dropdown appears top-right; tapping outside dismisses it
+    - Options: Borrows (→ StaffActiveBorrowsScreen), User Management (→ StaffUsersScreen), Logout
+
 #### Backend API Endpoints
 13. **Authentication Endpoints**
    - POST /api/auth/register - User registration
@@ -595,9 +710,11 @@ POST /api/transactions/update-due-date
 14. **Equipment Endpoints**
     - GET /api/equipment - List all equipment
     - GET /api/equipment/:id - Get equipment details
-    - GET /api/equipment/low-stock - Items below threshold (staff only) **NEW**
+    - GET /api/equipment/low-stock - Items below threshold (staff only)
+    - POST /api/equipment - Create new equipment type (staff only)
     - PATCH /api/equipment/:id/stock - Add stock units (staff only)
     - PUT /api/equipment/:id - Edit equipment details (staff only)
+    - DELETE /api/equipment/:id - Delete equipment type (staff only, guarded by active borrows)
 
 15. **Transaction Endpoints**
     - POST /api/transactions/borrow - Create borrow request (protected)
@@ -618,18 +735,20 @@ POST /api/transactions/update-due-date
     - PATCH /api/lockers/:locker_id/assign - Reassign locker to equipment (staff only)
 
 18. **User Management Endpoints**
-    - GET /api/users - List users (staff only)
+    - GET /api/users - List all users with RFID status (staff only)
+    - PATCH /api/users/:id/rfid - Assign or clear a user's RFID UID (staff only; 409 on duplicate UID)
 
-### ⚠️ Ready for Testing
-- RFID scan endpoints created, awaiting Arduino hardware integration
-- Transaction state machine fully implemented, needs end-to-end testing with physical lockers
+### ✅ Hardware Integration (Week 4)
+- Arduino Uno + RC522 RFID reader connected via USB serial to Mac
+- Serial bridge (`serial-bridge/serial-bridge.js`) reads Arduino output and forwards to Express backend via HTTP
+- Solenoid lock controlled via IRF520 MOSFET on pin D7
+- IR sensor (D2) and HX711 load cell (D4/D5) for item presence detection
+- End-to-end flow tested: borrow in app → tap RFID card → backend authorises → bridge sends UNLOCK → solenoid triggers → transaction status updates in app
 
 ### ❌ Not Yet Implemented
-- Add new equipment (staff can edit/stock existing items only)
-- Overdue auto-expiry (scheduled job to mark transactions as expired)
-- Equipment replenishment workflow (RFID unlock for lab tech restocking)
-- Admin panel for user and equipment management
-- Arduino firmware integration and testing
+- Physical solenoid wiring verification (software + serial bridge confirmed working; hardware circuit to be verified)
+- Overdue auto-expiry scheduled job (currently runs on API call only)
+- Cloud deployment (Railway config ready)
 
 ---
 
@@ -687,14 +806,22 @@ POST /api/transactions/update-due-date
 - [x] Low-stock alert banner on Staff Dashboard
 - [x] Active Borrows screen (all active borrows, overdue detection, filter tabs)
 - [x] GET /equipment/low-stock and GET /transactions/active endpoints
-- [ ] Add new equipment (staff can only edit existing)
-- [ ] Overdue auto-expiry (scheduled job)
-- [ ] Replenishment unlock feature (RFID for lab tech restocking)
-- [ ] Arduino RFID integration testing
+- [x] Add new equipment (StaffAddEquipmentScreen + POST /equipment endpoint)
+- [x] Overdue auto-expiry for uncollected requests (pending_pickup only)
+- [x] Student overdue warning: bright red banner in My Borrows for items past due but not returned
+- [x] Replenishment unlock feature (RFID for lab tech restocking — staff branch in rfidRoutes.js)
+- [x] User management screen (StaffUsersScreen + PATCH /users/:id/rfid endpoint)
+- [x] RFID assignment UI (assign/update/clear per user)
+- [x] Delete equipment (guarded by active transactions, atomic locker unassign)
+- [x] Staff dashboard dropdown menu (⋮ button replaces separate header buttons)
+- [x] Arduino RFID integration testing (software end-to-end confirmed working)
 
 ### Week 4 - Testing & Polish
-- [ ] End-to-end system testing
-- [ ] Edge case handling
+- [x] Arduino firmware written (rfid_locker.ino — RC522 + HX711 + IR + solenoid)
+- [x] Serial bridge written (serial-bridge.js — USB serial → HTTP → Express)
+- [x] End-to-end RFID scan → backend → UNLOCK flow tested
+- [ ] Physical solenoid circuit verification
+- [ ] Edge case handling (card not registered, locker mismatch, etc.)
 - [ ] UI/UX improvements
 - [ ] Documentation completion
 - [ ] Demo preparation
@@ -771,7 +898,7 @@ NODE_ENV=production
 
 ### Code Metrics
 - **Backend Files:** 20+ route/middleware files
-- **Frontend Screens:** 9 screens (Login, Register, EquipmentList, BorrowEquipment, ActiveTransactions, TransactionHistory, StaffDashboard, StaffEditEquipment, StaffActiveBorrows)
+- **Frontend Screens:** 11 screens (Login, Register, EquipmentList, BorrowEquipment, ActiveTransactions, TransactionHistory, StaffDashboard, StaffEditEquipment, StaffActiveBorrows, StaffAddEquipment, StaffUsers)
 - **Database Tables:** 5 core tables + 2 views
 - **API Endpoints:** 25+ endpoints (15+ protected routes)
 - **Lines of Code:** ~5000+ lines (estimated)
@@ -816,7 +943,7 @@ The AEWRS project has successfully completed Week 2 with a fully functional stud
 - RFID integration endpoints prepared
 - Database schema enhancements (location column)
 
-### Week 3 Achievements (In Progress) 🔄
+### Week 3 Achievements ✅
 - Fixed locker assignment: each equipment type permanently bound to a locker compartment
 - Database migration `upgrade-v3.sql` for existing databases
 - Borrow logic refactored: no longer relies on locker `status` as availability gate
@@ -831,13 +958,19 @@ The AEWRS project has successfully completed Week 2 with a fully functional stud
 - **Session 3:** Active Borrows screen with stats bar, filter tabs (All/Pending/Active/Overdue), red overdue highlighting
 - **Session 3:** `GET /equipment/low-stock` and `GET /transactions/active` staff-protected endpoints
 - **Session 3:** Fixed `api.config.js` baseURL bug (was using raw env var, ignoring fallback); updated machine IP
+- **Session 4:** Add new equipment screen + `POST /equipment` endpoint (staff-only)
+- **Session 4:** Overdue auto-expiry scoped to `pending_pickup` only; `active`/`pending_return` stay in student My Borrows with bright red ⚠ warning banner until physically returned
+- **Session 5:** Replenishment RFID unlock — staff RFID tap always grants locker access with `action: 'restock'`
+- **Session 5:** User management screen (StaffUsersScreen) — view all users, assign/clear RFID UIDs, duplicate UID protection
+- **Session 5:** Delete equipment — `DELETE /equipment/:id` with active-transaction guard + atomic locker unassign
+- **Session 5:** Staff Dashboard dropdown menu (⋮) replaces separate Borrows/Users/Logout header buttons
 
 ### Current Status
 The project is **on track** for the 1-month deadline:
 - **Week 1:** ✅ Foundation complete
 - **Week 2:** ✅ Student workflow complete
-- **Week 3:** 🔄 Fixed locker system done; lab tech features remaining
-- **Week 4:** Testing, polish, and demo preparation
+- **Week 3:** ✅ All software features complete
+- **Week 4:** 🔄 Arduino firmware + serial bridge done; solenoid circuit verification + polish remaining
 
 ### Key Success Factors
 1. **Quick problem resolution:** Resolved database column issues and backend caching within minutes
@@ -850,24 +983,24 @@ The project is **on track** for the 1-month deadline:
 - **Full Transaction Lifecycle:** pending_pickup → active → pending_return → completed
 - **Flexible Borrowing:** Users can cancel or change duration before pickup
 - **Detailed UI:** Equipment details, locker location, collection instructions
-- **RFID Ready:** Endpoints created for Arduino hardware integration
+- **Arduino Integration:** Firmware + serial bridge complete; full RFID→backend→solenoid flow tested
 - **Fixed Locker Mapping:** Each equipment type has a dedicated, permanent compartment
-- **Staff Portal:** Separate green-themed dashboard for inventory management
+- **Staff Portal:** Separate green-themed dashboard for inventory management, including add/edit/stock-up/delete
+- **Smart Overdue Handling:** Uncollected expired requests auto-expired; borrowed items stay visible until physically returned with red warning
 - **Server-Side Role Assignment:** SIT ID range determines role — no client trust required
-- **Secure by Design:** JWT tokens, role-based access, parameterized queries
+- **RFID Role-Aware:** Staff tap = always granted (restock); student tap = transaction-validated (pickup/return)
+- **User RFID Management:** Staff can assign, update, or clear RFID card bindings for any user
+- **Secure by Design:** JWT tokens, role-based access, parameterized queries, duplicate RFID UID protection
 
-### Next Phase Preview
-Week 3 will focus on lab tech and admin features:
-- Equipment overview dashboard
-- Low-stock alerts and notifications
-- Replenishment unlock workflow
-- User and equipment management
-- Arduino RFID hardware integration
+### Week 4 Progress
+- Arduino firmware (`rfid_locker.ino`): RC522 RFID reader, HX711 load cell, IR sensor, solenoid via MOSFET
+- Serial bridge (`serial-bridge.js`): reads `SCAN:<UID>` from Arduino, calls `/api/rfid/scan`, sends `UNLOCK`/`DENY` back
+- Remaining: solenoid circuit verification, edge case handling, UI polish, demo prep
 
 The system architecture is production-ready, secure, and scalable. The student-facing features are fully implemented and tested. The backend is running stably with proper error handling and database transactions.
 
 ---
 
 **Generated:** February 27, 2026
-**Last Updated:** March 4, 2026 — Week 3 session 3: Low-stock alerts, Active Borrows view, api.config.js bug fix
-**Next Update:** After Week 3 completion (Add equipment, overdue expiry, Arduino RFID integration)
+**Last Updated:** March 18, 2026 — Week 4: Arduino firmware (rfid_locker.ino), serial bridge (serial-bridge.js), end-to-end RFID flow tested
+**Next Update:** After demo preparation complete
